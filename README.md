@@ -84,6 +84,9 @@ execution is claimed. Local checks and the certification entry point are runnabl
 A3S Test terminal suite. It fails when a required case fails; it does not skip
 missing weights. At this checkpoint the quality campaign is **red**: four of
 seventeen cases fail. See retained [evidence](docs/evidence/akis/20261013-bootstrap/OUTCOME.md).
+The [boundary/tokenizer checkpoint](docs/evidence/akis/20261013-boundary-tokenizer/OUTCOME.md)
+extends importer/grammar coverage and removes quadratic BPE scanning; the same
+four semantic failures remain visible.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

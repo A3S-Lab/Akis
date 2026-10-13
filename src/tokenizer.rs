@@ -1,5 +1,43 @@
 use crate::{Error, Result};
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
+
+struct Symbol {
+    start: usize,
+    end: usize,
+    previous: Option<usize>,
+    next: Option<usize>,
+    generation: usize,
+}
+
+#[derive(PartialEq)]
+struct Merge {
+    score: f32,
+    left: usize,
+    right: usize,
+    generations: [usize; 2],
+}
+
+impl Eq for Merge {}
+impl PartialOrd for Merge {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Merge {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Equal scores use the leftmost pair, including the +0/-0 tie.
+        let score = if self.score == other.score {
+            Ordering::Equal
+        } else {
+            self.score.total_cmp(&other.score)
+        };
+        score
+            .then_with(|| other.left.cmp(&self.left))
+            .then_with(|| other.right.cmp(&self.right))
+            .then_with(|| self.generations.cmp(&other.generations))
+    }
+}
 
 pub struct Tokenizer {
     pieces: Vec<String>,
@@ -97,31 +135,78 @@ impl Tokenizer {
     }
 
     fn bpe(&self, text: &str, out: &mut Vec<u32>) {
-        let mut symbols: Vec<String> = text.chars().map(|c| c.to_string()).collect();
-        while symbols.len() > 1 {
-            let mut best = None;
-            for i in 0..symbols.len() - 1 {
-                if let Some(&id) = self.lookup.get(&(symbols[i].clone() + &symbols[i + 1])) {
-                    let score = self.scores[id as usize];
-                    if best.is_none_or(|(_, s)| score > s) {
-                        best = Some((i, score));
-                    }
-                }
-            }
-            let Some((i, _)) = best else {
-                break;
-            };
-            let next = symbols.remove(i + 1);
-            symbols[i].push_str(&next);
+        let mut symbols: Vec<Symbol> = text
+            .char_indices()
+            .enumerate()
+            .map(|(i, (start, c))| Symbol {
+                start,
+                end: start + c.len_utf8(),
+                previous: i.checked_sub(1),
+                next: Some(i + 1),
+                generation: 0,
+            })
+            .collect();
+        let Some(last) = symbols.last_mut() else {
+            return;
+        };
+        last.next = None;
+        let mut heap = BinaryHeap::new();
+        for left in 0..symbols.len() - 1 {
+            self.push_merge(text, &symbols, left, &mut heap);
         }
-        for s in symbols {
-            if let Some(&id) = self.lookup.get(&s) {
+        while let Some(candidate) = heap.pop() {
+            let (left, right) = (candidate.left, candidate.right);
+            if symbols[left].next != Some(right)
+                || candidate.generations != [symbols[left].generation, symbols[right].generation]
+            {
+                continue;
+            }
+            symbols[left].end = symbols[right].end;
+            symbols[left].next = symbols[right].next;
+            symbols[left].generation += 1;
+            symbols[right].generation += 1;
+            if let Some(next) = symbols[left].next {
+                symbols[next].previous = Some(left);
+            }
+            if let Some(previous) = symbols[left].previous {
+                self.push_merge(text, &symbols, previous, &mut heap);
+            }
+            self.push_merge(text, &symbols, left, &mut heap);
+        }
+        let mut current = Some(0);
+        while let Some(i) = current {
+            let s = &text[symbols[i].start..symbols[i].end];
+            if let Some(&id) = self.lookup.get(s) {
                 out.push(id);
             } else if self.fallback {
                 out.extend(s.bytes().map(|b| self.bytes[&b]));
             } else {
                 out.push(self.unk);
             }
+            current = symbols[i].next;
+        }
+    }
+
+    fn push_merge(
+        &self,
+        text: &str,
+        symbols: &[Symbol],
+        left: usize,
+        heap: &mut BinaryHeap<Merge>,
+    ) {
+        let Some(right) = symbols[left].next else {
+            return;
+        };
+        if let Some(&id) = self
+            .lookup
+            .get(&text[symbols[left].start..symbols[right].end])
+        {
+            heap.push(Merge {
+                score: self.scores[id as usize],
+                left,
+                right,
+                generations: [symbols[left].generation, symbols[right].generation],
+            });
         }
     }
 
@@ -191,3 +276,7 @@ impl Tokenizer {
         self.pieces.len()
     }
 }
+
+#[cfg(test)]
+#[path = "tokenizer_tests.rs"]
+mod tests;

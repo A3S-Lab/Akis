@@ -100,3 +100,119 @@ fn framing_uses_marker_ids_instead_of_splitting_argument_text() {
     assert!(tool_body(&tokenizer, &[9, 11, 12]).is_err());
     assert!(tool_body(&tokenizer, &[11, 12, 10]).is_err());
 }
+
+#[test]
+fn every_supported_scalar_has_only_valid_complete_json() {
+    let schemas = [
+        (
+            json!({"type":"string"}),
+            vec![json!(""), json!("你🦀\n\"\\")],
+        ),
+        (
+            json!({"type":"integer"}),
+            vec![json!(-1), json!(0), json!(u64::MAX)],
+        ),
+        (
+            json!({"type":"number"}),
+            vec![json!(-1.25), json!(1e30), json!(0)],
+        ),
+        (json!({"type":"boolean"}), vec![json!(true), json!(false)]),
+        (json!({"type":"null"}), vec![Value::Null]),
+    ];
+    let invalid = [
+        "",
+        "\"",
+        "truee",
+        "nul",
+        "01",
+        "--1",
+        "1e",
+        "NaN",
+        "Infinity",
+        "\"\\uD800\"",
+        "\"\n\"",
+        "1.2.3",
+    ];
+    for (definition, valid) in schemas {
+        let schema = Schema::parse(&definition, 0).unwrap();
+        for value in valid {
+            let bytes = serde_json::to_vec(&value).unwrap();
+            for n in 0..=bytes.len() {
+                assert!(
+                    schema.accepts(&bytes[..n], false),
+                    "{definition}: {bytes:?} prefix {n}"
+                );
+            }
+            assert!(schema.accepts(&bytes, true));
+        }
+        for text in invalid {
+            assert!(
+                !schema.accepts(text.as_bytes(), true),
+                "{definition}: {text:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn structure_boundaries_and_optional_fields() {
+    let object = Schema::parse(
+        &json!({"type":"object","properties":{"a":{"type":"null"}}}),
+        0,
+    )
+    .unwrap();
+    for valid in [b"{}".as_slice(), b"{\"a\":null}", b" \n{ \"a\" : null }\t"] {
+        assert!(object.accepts(valid, true));
+    }
+    for invalid in [
+        b"{\"a\":null,".as_slice(),
+        b"{\"z\":null}",
+        b"{\"a\":null,\"a\":null}",
+    ] {
+        assert!(!object.accepts(invalid, false));
+    }
+    let array = Schema::parse(&json!({"type":"array","items":{"type":"integer"}}), 0).unwrap();
+    assert!(array.accepts(&serde_json::to_vec(&vec![1; 64]).unwrap(), true));
+    assert!(!array.accepts(&serde_json::to_vec(&vec![1; 65]).unwrap(), true));
+    for count in [64, 65] {
+        let properties: serde_json::Map<String, Value> = (0..count)
+            .map(|i| (format!("f{i}"), json!({"type":"null"})))
+            .collect();
+        assert_eq!(
+            Schema::parse(&json!({"type":"object","properties":properties}), 0).is_ok(),
+            count == 64
+        );
+    }
+    for count in [255, 256] {
+        assert_eq!(
+            Schema::parse(&json!({"enum":(0..count).collect::<Vec<_>>()}), 0).is_ok(),
+            count == 255
+        );
+    }
+    let mut nested = json!({"type":"null"});
+    for depth in 1..=17 {
+        nested = json!({"type":"array","items":nested});
+        assert_eq!(Schema::parse(&nested, 0).is_ok(), depth <= 16);
+    }
+}
+
+#[test]
+fn bounded_mutation_campaign_never_accepts_invalid_json() {
+    let schema = Schema::parse(&json!({"type":"object","properties":{"value":{"type":"string"},"n":{"type":"number"}},"required":["value","n"]}),0).unwrap();
+    let seed = br#"{"value":"hello","n":-1.25e2}"#;
+    let mut random = 0x61a9d394u32;
+    for _ in 0..10000 {
+        let mut bytes = seed.to_vec();
+        random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+        let at = random as usize % bytes.len();
+        random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+        bytes[at] = (random >> 24) as u8;
+        if schema.accepts(&bytes, true) {
+            let value: Value = serde_json::from_slice(&bytes).unwrap();
+            let fields = value.as_object().unwrap();
+            assert_eq!(fields.len(), 2);
+            assert!(fields["value"].is_string());
+            assert!(fields["n"].is_number());
+        }
+    }
+}

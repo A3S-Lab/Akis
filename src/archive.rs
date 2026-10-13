@@ -84,7 +84,11 @@ impl Archive {
     pub fn open(path: impl AsRef<Path>, limits: &InferenceLimits) -> Result<Self> {
         limits.validate()?;
         let file = File::open(path)?;
-        if file.metadata()?.len() > limits.max_model_bytes {
+        let metadata = file.metadata()?;
+        if !metadata.is_file() {
+            return Err(bad("model must be a regular file"));
+        }
+        if metadata.len() > limits.max_model_bytes {
             return Err(bad("model byte limit exceeded"));
         }
         let mut bytes = Vec::new();

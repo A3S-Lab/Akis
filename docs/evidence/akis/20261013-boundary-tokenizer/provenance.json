@@ -1,0 +1,9 @@
+{
+  "binary_sha256": "e1392d2a616ad426c62177f3a9ae1d408e07853bfd8898c48411d9eaf129172b",
+  "reference_export_sha256": "8e172b2a2982fa7d4467c9e9cfebf83cda0a70965248b116a5595cc53197746a",
+  "model_sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+  "pre_fix_binary_sha256": "eb16d19a5dc40407c30e5dd8e7e739a4d60db4b005a7caf05953e1bb726a9ae5",
+  "pre_fix_4000_repeat_seconds": 9.937049375,
+  "pre_fix_regression_timeout_seconds": 2,
+  "post_fix_10000_repeat_seconds": 0.083707792
+}
