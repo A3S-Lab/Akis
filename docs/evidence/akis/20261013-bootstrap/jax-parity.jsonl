@@ -1,0 +1,6 @@
+{"tokens": 3, "cosine": 0.9999833703041077, "max_absolute_error": 0.30045413970947266, "reference_top": 8110, "akis_top": 8110}
+{"tokens": 31, "cosine": 0.9999954700469971, "max_absolute_error": 0.1617727279663086, "reference_top": 257, "akis_top": 257}
+{"tokens": 59, "cosine": 0.9999985098838806, "max_absolute_error": 0.14938926696777344, "reference_top": 6, "akis_top": 6}
+{"passed": 3, "comparisons": [{"tokens": 3, "cosine": 0.9999833703041077, "max_absolute_error": 0.30045413970947266, "reference_top": 8110, "akis_top": 8110}, {"tokens": 31, "cosine": 0.9999954700469971, "max_absolute_error": 0.1617727279663086, "reference_top": 257, "akis_top": 257}, {"tokens": 59, "cosine": 0.9999985098838806, "max_absolute_error": 0.14938926696777344, "reference_top": 6, "akis_top": 6}]}
+{"head": "confidence-pool-fallback", "dimensions": 3072, "cosine": 0.9999085068702698}
+{"head": "confidence", "reference": 0.24422524869441986, "akis": 0.244088, "absolute_error": 0.00013724869441986143}

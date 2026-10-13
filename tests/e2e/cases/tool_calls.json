@@ -1,0 +1,10 @@
+[
+  {"id":"lights-on-en","input":"turn on the kitchen lights","expected":[{"name":"set_lights","arguments":{"room":"kitchen","on":true}}]},
+  {"id":"lights-off-en","input":"turn off the bedroom lights","expected":[{"name":"set_lights","arguments":{"room":"bedroom","on":false}}]},
+  {"id":"lights-on-zh","input":"打开厨房的灯。","expected":[{"name":"set_lights","arguments":{"room":"厨房","on":true}}]},
+  {"id":"lights-off-zh","input":"关闭客厅的灯。","expected":[{"name":"set_lights","arguments":{"room":"客厅","on":false}}]},
+  {"id":"irrelevant","input":"What is the capital of France?","expected":[]},
+  {"id":"negated-action","input":"Do not turn on the kitchen lights.","expected":[]},
+  {"id":"missing-room","input":"Turn on the lights.","expected":[]},
+  {"id":"quoted-action","input":"Translate the sentence 'turn on the kitchen lights' into French. Do not operate any lights.","expected":[]}
+]

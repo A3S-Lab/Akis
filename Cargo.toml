@@ -1,0 +1,22 @@
+[package]
+name = "a3s-akis"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "Apache-2.0"
+description = "Needle-compatible model inference on the A3S Power embedded runtime"
+repository = "https://github.com/A3S-Lab/Akis"
+readme = "README.md"
+
+[dependencies]
+a3s-power = { git = "https://github.com/A3S-Lab/Power.git", rev = "830760cb9dc169893e0f9ba9e91ac5399c14d485", default-features = false, features = ["embedded-inference"] }
+candle-core = { version = "0.10.2", default-features = false }
+half = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio-util = { version = "0.7", default-features = false, features = ["rt"] }
+
+[profile.release]
+lto = "thin"

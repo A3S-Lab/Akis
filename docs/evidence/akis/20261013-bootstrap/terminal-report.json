@@ -1,0 +1,105 @@
+{
+  "run_id": "a3s-test-47008-1",
+  "suite": "akis-terminal",
+  "status": "passed",
+  "scenarios": [
+    {
+      "id": "inspect-pinned-needle3",
+      "name": "inspect-pinned-needle3",
+      "surface": "tui",
+      "status": "passed",
+      "duration_ms": 103,
+      "steps": [
+        {
+          "id": "archive-loaded",
+          "status": "passed",
+          "duration_ms": 88,
+          "attempts": 1,
+          "output": {
+            "summary": "terminal wait condition matched",
+            "data": {
+              "output": {
+                "retained_bytes": 785,
+                "total_bytes": 785,
+                "truncated": false
+              },
+              "process": {
+                "exit_code": 0,
+                "running": false,
+                "signal": null
+              },
+              "surface": "tui",
+              "viewport": {
+                "alternate_screen": false,
+                "application_cursor": false,
+                "bracketed_paste": false,
+                "columns": 120,
+                "cursor": {
+                  "column": 0,
+                  "row": 40,
+                  "visible": true
+                },
+                "rows": 60,
+                "text": "{\n  \"geometry\": {\n    \"context\": 8192,\n    \"conv_taps\": 3,\n    \"engram_dilation\": 3,\n    \"engram_dim\": 128,\n    \"engram_orders\": [\n      2,\n      3\n    ],\n    \"engram_seed_heads\": 0,\n    \"engram_sites\": [\n      3,\n      7,\n      11,\n      15,\n      19\n    ],\n    \"engram_slots\": 18432,\n    \"engram_tables\": 6,\n    \"engram_taps\": 4,\n    \"global_mask\": 541200,\n    \"hadamard\": 1024,\n    \"heads\": 12,\n    \"kv_bits\": 8,\n    \"kv_heads\": 2,\n    \"kv_window\": 256,\n    \"lanes\": 4,\n    \"layers\": 20,\n    \"out_vocab\": 8192,\n    \"qk_dim\": 48,\n    \"rope_theta\": 100000.0,\n    \"sliding_window\": 1024,\n    \"v_dim\": 64,\n    \"vocab\": 8192,\n    \"width\": 768\n  },\n  \"sha256\": \"c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38\",\n  \"tensors\": 581\n}"
+              }
+            },
+            "evidence": []
+          },
+          "error": null
+        },
+        {
+          "id": "artifact-identity",
+          "status": "passed",
+          "duration_ms": 0,
+          "attempts": 1,
+          "output": {
+            "summary": "terminal text is visible",
+            "data": {
+              "text": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+              "visible": true
+            },
+            "evidence": []
+          },
+          "error": null
+        },
+        {
+          "id": "needle-width",
+          "status": "passed",
+          "duration_ms": 0,
+          "attempts": 1,
+          "output": {
+            "summary": "terminal text is visible",
+            "data": {
+              "text": "\"width\": 768",
+              "visible": true
+            },
+            "evidence": []
+          },
+          "error": null
+        },
+        {
+          "id": "archive-evidence",
+          "status": "passed",
+          "duration_ms": 0,
+          "attempts": 1,
+          "output": {
+            "summary": "terminal recording captured",
+            "data": {
+              "bytes": 785
+            },
+            "evidence": [
+              {
+                "name": "terminal/inspect.vt",
+                "path": "/Users/roylin/code/a3s/crates/akis/.a3s-test/runs/a3s-test-47008-1/inspect-pinned-needle3/terminal/inspect.vt",
+                "media_type": "application/vnd.a3s.terminal-vt"
+              }
+            ]
+          },
+          "error": null
+        }
+      ],
+      "error": null,
+      "cleanup_error": null
+    }
+  ]
+}

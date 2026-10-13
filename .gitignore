@@ -1,0 +1,5 @@
+/target/
+/.cache/
+/.a3s-test/
+*.cact
+__pycache__/

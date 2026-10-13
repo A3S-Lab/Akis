@@ -1,0 +1,14 @@
+name: Component checks (not full certification)
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal --component rustfmt,clippy
+      - run: rustup run 1.97.1 cargo fmt --check
+      - run: rustup run 1.97.1 cargo clippy --locked --all-targets -- -D warnings
+      - run: rustup run 1.97.1 cargo test --locked

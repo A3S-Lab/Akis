@@ -1,0 +1,19 @@
+suite "akis-terminal" {
+    version = 1
+    scenario "inspect-pinned-needle3" {
+        surface = "tui"
+        timeout_ms = 30000
+        wait "archive-loaded" {
+            text = "\"tensors\": 581"
+        }
+        expect "artifact-identity" {
+            text = "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38"
+        }
+        expect "needle-width" {
+            text = "\"width\": 768"
+        }
+        terminal_recording "archive-evidence" {
+            path = "terminal/inspect.vt"
+        }
+    }
+}

@@ -1,0 +1,2 @@
+{"id": "lights-on-zh", "status": "failed", "error": "{'expected': [{'name': 'set_lights', 'arguments': {'room': '厨房', 'on': True}}], 'actual': []}", "seconds": 1.354801}
+{"platform": "macOS-26.6.2-arm64-arm-64bit", "machine": "arm64", "model_sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38", "binary_sha256": "ae401b67bc72a49023e2ad2cf652c547a579f4466b7a583ed4b53526b7b4d279", "cases_sha256": "fce6550d61d2b3041cd4bcd4d19605366bbea6585a5d0bd9ba19a4adbb04c6ef", "passed": 0, "failed": 1}

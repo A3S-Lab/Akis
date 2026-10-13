@@ -1,0 +1,40 @@
+{
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "power_revision": "830760cb9dc169893e0f9ba9e91ac5399c14d485",
+  "needle_source_revision": "3da4261073199444f2e070800854436fbc31fb6a",
+  "model_repository_revision": "93e88ede867e4311c39151285e74df513e4b835b",
+  "hashes": {
+    ".cache/needle3.cact": {
+      "sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+      "bytes": 35335380
+    },
+    "target/release/a3s-akis": {
+      "sha256": "eb16d19a5dc40407c30e5dd8e7e739a4d60db4b005a7caf05953e1bb726a9ae5",
+      "bytes": 1432032
+    },
+    "target/release/examples/benchmark": {
+      "sha256": "a14f7fc75cc09e252f88aff0d72f14141d1cd4c8575c92a6483ac012c03a8273",
+      "bytes": 1353904
+    },
+    "Cargo.lock": {
+      "sha256": "93a40d3bccca3a73a85c9896b39d81800984b201ff5d8f5dfd84ed2e91253de5",
+      "bytes": 56943
+    },
+    ".cache/libneedle3.dylib": {
+      "sha256": "993d617e1136d644560c1fe59058e40810b9386645d01d2f6472af042f4c72ec",
+      "bytes": 1070464
+    },
+    ".cache/needle/architecture.py": {
+      "sha256": "4d825258a387d77447eec6d7996385a5b833f4f171abe9daeada61e6bac9da6a",
+      "bytes": 43906
+    },
+    ".cache/needle/export.py": {
+      "sha256": "8e172b2a2982fa7d4467c9e9cfebf83cda0a70965248b116a5595cc53197746a",
+      "bytes": 25305
+    },
+    ".cache/needle/quantize.py": {
+      "sha256": "27d77491f41af60f75fd43bf7b003695ac05173b30e91dff69cafc30c7737d61",
+      "bytes": 6877
+    }
+  }
+}

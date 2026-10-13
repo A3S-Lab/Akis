@@ -1,0 +1,11 @@
+A3S Akis
+Copyright 2026 A3S Lab
+
+The Needle archive format, tokenizer algorithm and model architecture are
+adapted from cactus-compute/needle, Copyright Cactus Compute, Inc., licensed
+under Apache-2.0. Reference revision:
+3da4261073199444f2e070800854436fbc31fb6a
+https://github.com/cactus-compute/needle
+
+Akis is an independent Rust implementation. No upstream native engine binary
+or model weights are bundled. Model artifacts retain their own licenses.
