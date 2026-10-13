@@ -19,11 +19,11 @@ Akis 是基于 Power embedded inference 的模型 crate。目标是证明从模�
 | --- | --- | --- | --- |
 | Needle 3 `.cact` | 容器解析、CQ 解码、F32 CPU 权重 | 真实 581 张量工件加载；截断与部分非法输入单测 | 全格式组合、模糊测试、峰值内存 |
 | 分词 | 内嵌 BPE、特殊 token、byte fallback | 合成单测；3 条真实输入与上游 token IDs 一致 | 全 Unicode 与多语言差分 |
-| 模型前向 | GQA、卷积、engram、Monarch、mHC、A8 数值模拟 | 3 条 JAX 差分，cosine > 0.99998 且 top-1 相同 | 长上下文、逐层误差、跨平台 |
+| 模型前向 | GQA、卷积、engram、Monarch、mHC、A8 数值模拟 | 9 条 JAX 差分，含 255/256/257 与 1023/1024/1025 token，top-1 相同 | 多样长文本、最大上下文、逐层误差、跨平台 |
 | 生成与工具调用 | 贪心生成、schema 子集约束、返回前复核 | 真实进程测试 13/17，通过与失败全部留存；grammar 单测 | 中文、否定、缺参数失败；全场景语义、批量与多轮 |
 | 置信度 | 原始 head sigmoid 与 token 概率分开返回 | 字段存在；无 head 不伪造值 | 官方最终 confidence 等价、业务校准 |
 | Embedding | embedding head 或 confidence probe pool | confidence pool 3072 维归一化/确定性；JAX cosine 0.99991 | 检索质量、原生引擎返回契约及 embedding-head 工件差分 |
-| Power | 固定版本、CPU 设备、许可、取消、资源检查、receipt | 合成许可/入场前与入场后取消/状态限制，真实 receipt 独立摘要复核 | 每个阶段取消、争用、峰值资源、平台矩阵 |
+| Power | 固定版本、CPU 设备、许可、取消、资源检查、receipt | 许可覆盖预处理；有界 BPE 取消；schema/分词/head 预算；真实 receipt 摘要复核；单次 RSS 对照 | 每个阶段真实取消延迟、争用、完整峰值资源、平台矩阵 |
 | 宿主动作 | Akis 只返回提案 | API 没有动作执行入口 | Code/Use/Flow/Apofasi 真实集成 |
 
 基线版本与工件哈希在 `docs/evidence/akis/20261013-bootstrap/OUTCOME.md` 留存。
@@ -244,7 +244,9 @@ OUTCOME 写清通过/失败/阻塞/未执行的数量，以及“明确不宣称
 
 特别审查项：当前 `Model` 用自有 Rust 控制流调用 Power 提供的 Candle device，
 不代表 Power 自动审计了每一个中间分配。状态估算、head pooling 和 grammar 内存必须
-通过峰值测量与极限用例证明。当前 CLI 没有连接 OS 信号到 CancellationToken；
+通过峰值测量与极限用例证明。目前已补缓冲区预算并实测 1025-token logits 请求峰值
+RSS 约 717MB → 536MB；这不构成整个操作系统 RSS 上限或所有输入的分配证明。
+当前 CLI 没有连接 OS 信号到 CancellationToken；
 测试不能把库层取消测试当成 CLI 优雅取消测试。
 
 ## 10. 扩展轨道的额外出口

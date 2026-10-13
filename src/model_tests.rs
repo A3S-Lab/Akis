@@ -51,6 +51,104 @@ fn no_head_does_not_invent_confidence() {
 }
 
 #[test]
+fn histories_drop_tokens_outside_the_effective_window() {
+    let mut m = model(InferenceLimits::default());
+    m.geometry.kv_window = 3;
+    let cancel = CancellationToken::new();
+    let mut state = m.state(false);
+    for token in [2, 4, 5, 4, 6, 4, 5, 4, 6, 4, 5, 4] {
+        m.step(token, &mut state, &cancel).unwrap();
+        for layer in &state.layers {
+            assert!(layer.keys.len() <= 3);
+            assert!(layer.values.len() <= 3);
+            assert!(layer.q.len() <= 1);
+            assert!(layer.k.len() <= 1);
+            assert!(layer.v.len() <= 1);
+        }
+    }
+    assert!(state.cells.is_empty());
+}
+
+#[test]
+fn tokenization_obeys_the_power_state_budget_before_forward() {
+    let limits = InferenceLimits {
+        max_state_bytes: 130_000,
+        ..InferenceLimits::default()
+    };
+    let mut bytes = crate::test_support::fixture();
+    bytes[13 * 4..14 * 4].copy_from_slice(&4096u32.to_le_bytes());
+    let m = Model::load(
+        Archive::from_bytes(bytes, &limits).unwrap(),
+        EmbeddedRuntime::new(DevicePreference::Cpu, limits).unwrap(),
+    )
+    .unwrap();
+    let error = m
+        .generate(&"<tool_call>".repeat(1000), 1, &CancellationToken::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("tokenizer"), "{error}");
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+}
+
+#[test]
+fn probe_pooling_is_included_in_the_state_budget() {
+    let mut m = model(InferenceLimits {
+        max_state_bytes: 16 * 1024,
+        ..InferenceLimits::default()
+    });
+    let b = m.weights.len();
+    for shape in [
+        vec![8192, 2],
+        vec![2, 4096],
+        vec![1, 2],
+        vec![1, 2, 4096],
+        vec![1, 2],
+        vec![1],
+    ] {
+        m.weights.push(
+            Tensor::zeros(
+                shape.as_slice(),
+                candle_core::DType::F32,
+                m.runtime.device().tensor_device(),
+            )
+            .unwrap(),
+        );
+    }
+    m.heads.push((2, b));
+    m.validate_shapes().unwrap();
+    let error = m.generate("hi", 1, &CancellationToken::new()).unwrap_err();
+    assert!(error.to_string().contains("state"), "{error}");
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+}
+
+#[test]
+fn overflowing_head_arithmetic_is_an_error_instead_of_a_success_score() {
+    let mut m = model(InferenceLimits::default());
+    let b = m.weights.len();
+    for (shape, value) in [
+        (vec![2, 2], 0.0),
+        (vec![2, 1], f32::MAX),
+        (vec![1, 2], f32::MAX),
+        (vec![1, 2, 1], 0.0),
+        (vec![1, 2], f32::MAX),
+        (vec![1], 0.0),
+    ] {
+        m.weights.push(
+            Tensor::from_vec(
+                vec![value; shape.iter().product()],
+                shape.as_slice(),
+                m.runtime.device().tensor_device(),
+            )
+            .unwrap(),
+        );
+    }
+    m.heads.push((2, b));
+    m.validate_shapes().unwrap();
+    let error = m.generate("hi", 1, &CancellationToken::new()).unwrap_err();
+    assert!(error.to_string().contains("non-finite"), "{error}");
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+}
+
+#[test]
 fn cancellation_during_forward_releases_the_power_permit() {
     let limits = InferenceLimits::default();
     let mut bytes = crate::test_support::fixture();

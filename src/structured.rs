@@ -2,6 +2,37 @@ use crate::{CancellationToken, Error, Generation, Model, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{self, Write};
+
+struct ToolSize<'a> {
+    bytes: usize,
+    limit: usize,
+    cancel: &'a CancellationToken,
+}
+impl Write for ToolSize<'_> {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        if self.cancel.is_cancelled() {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "request cancelled",
+            ));
+        }
+        self.bytes = self
+            .bytes
+            .checked_add(data.len())
+            .filter(|&n| n <= self.limit)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "tool request byte limit exceeded",
+                )
+            })?;
+        Ok(data.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -75,9 +106,16 @@ impl Schema {
             if vs.is_empty() || vs.len() > 255 || vs.iter().any(|v| v.is_object() || v.is_array()) {
                 return Err(bad());
             }
-            let mut without = value.clone();
-            without.as_object_mut().ok_or_else(bad)?.remove("enum");
+            if matches!(kind, Some("object" | "array")) {
+                return Err(bad());
+            }
             if obj.contains_key("type") {
+                let without = Value::Object(
+                    obj.iter()
+                        .filter(|(key, _)| key.as_str() != "enum")
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect(),
+                );
                 let shape = Self::parse(&without, depth + 1)?;
                 for v in vs {
                     if !shape.accepts(&serde_json::to_vec(v)?, true) {
@@ -343,12 +381,36 @@ impl Model {
         max_tokens: usize,
         cancel: &CancellationToken,
     ) -> Result<Completion> {
+        let _permit = self.runtime().begin(cancel)?;
         if tools.is_empty() || tools.len() > 64 {
             return Err(Error::Request("tool count must be 1..64".into()));
         }
+        let limits = self.runtime().limits();
+        let overhead =
+            "<|im_start|>user\n<tools></tools>\n<|im_end|>\n<|im_start|>assistant\n".len();
+        let limit = limits
+            .max_input_bytes
+            .checked_sub(input.len())
+            .and_then(|n| n.checked_sub(overhead))
+            .ok_or_else(|| Error::Request("tool request byte limit exceeded".into()))?;
+        let mut size = ToolSize {
+            bytes: 0,
+            limit,
+            cancel,
+        };
+        let measured = serde_json::to_writer(&mut size, tools);
+        crate::model::check_cancel(cancel)?;
+        measured?;
+        // Bound schema nodes/enum clones, serialized tools and the owned prompt.
+        let bytes = (size.bytes as u64)
+            .checked_mul(64)
+            .and_then(|n| n.checked_add(input.len() as u64 + overhead as u64))
+            .ok_or_else(|| Error::Request("tool schema state size overflow".into()))?;
+        limits.checked_state_bytes(bytes, "tool schema state")?;
         let mut names = BTreeSet::new();
         let mut branches = Vec::new();
         for tool in tools {
+            crate::model::check_cancel(cancel)?;
             if tool.name.is_empty()
                 || tool.name.len() > 128
                 || !names.insert(&tool.name)
@@ -373,23 +435,28 @@ impl Model {
         }
         let schema = Schema::Array(Box::new(Schema::Any(branches)));
         let tools = serde_json::to_string(tools)?;
+        crate::model::check_cancel(cancel)?;
         let prompt = format!(
             "<|im_start|>user\n<tools>{tools}</tools>\n{input}<|im_end|>\n<|im_start|>assistant\n"
         );
-        let generation = self.generate_constrained(&prompt, max_tokens, cancel, Some(&schema))?;
+        let generation =
+            self.generate_admitted(&prompt, max_tokens, cancel, Some(&schema), bytes)?;
         if !generation.finished {
             return Err(Error::Request(
                 "generation exhausted before a complete tool call".into(),
             ));
         }
         let body = tool_body(&self.tokenizer, &generation.token_ids)?;
+        crate::model::check_cancel(cancel)?;
         if !schema.accepts(&body, true) {
             return Err(Error::Request(
                 "tool call violates the declared schema".into(),
             ));
         }
+        let function_calls = serde_json::from_slice(&body)?;
+        crate::model::check_cancel(cancel)?;
         Ok(Completion {
-            function_calls: serde_json::from_slice(&body)?,
+            function_calls,
             generation,
         })
     }

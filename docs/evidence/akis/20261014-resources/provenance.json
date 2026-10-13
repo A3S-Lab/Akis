@@ -1,0 +1,16 @@
+{
+  "parent_commit": "5b7363bd5f86013be0d194da4a8d9ec300a61463",
+  "date": "2026-10-14 Asia/Shanghai",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "source_manifest_sha256": "1cf598ab5bb5168ff47dc2d7d19f8884cffc1a30e97fbb8c67190f929de9adfb",
+  "hashes": {
+    "target/release/a3s-akis": "d6ca58a7534f3d4a54cd10c73fe2fa6defa0eade66cbb2c43d8fcc4de80bae1e",
+    ".cache/akis-baseline": "e1392d2a616ad426c62177f3a9ae1d408e07853bfd8898c48411d9eaf129172b",
+    ".cache/needle3.cact": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+    "Cargo.lock": "93a40d3bccca3a73a85c9896b39d81800984b201ff5d8f5dfd84ed2e91253de5",
+    ".cache/needle/architecture.py": "4d825258a387d77447eec6d7996385a5b833f4f171abe9daeada61e6bac9da6a",
+    ".cache/needle/export.py": "8e172b2a2982fa7d4467c9e9cfebf83cda0a70965248b116a5595cc53197746a",
+    ".cache/needle/quantize.py": "27d77491f41af60f75fd43bf7b003695ac05173b30e91dff69cafc30c7737d61",
+    "tests/e2e/cases/tool_calls.json": "fce6550d61d2b3041cd4bcd4d19605366bbea6585a5d0bd9ba19a4adbb04c6ef"
+  }
+}

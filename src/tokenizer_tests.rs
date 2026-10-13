@@ -56,3 +56,57 @@ fn heap_matches_exhaustive_merges_for_ties_and_stale_neighbors() {
         }
     }
 }
+
+#[test]
+fn bounded_encoder_rejects_bytes_and_memory_without_partial_output() {
+    let tok = Tokenizer::from_bytes(&crate::test_support::tokenizer_blob(), 10).unwrap();
+    let cancel = CancellationToken::new();
+    let limits = InferenceLimits {
+        max_input_bytes: 2,
+        ..InferenceLimits::default()
+    };
+    assert!(tok.encode_bounded("hih", &limits, &cancel).is_err());
+    let limits = InferenceLimits {
+        max_state_bytes: 1,
+        ..InferenceLimits::default()
+    };
+    assert!(tok.encode_bounded("hi", &limits, &cancel).is_err());
+    assert_eq!(
+        tok.encode_bounded("hi 你<tool_call>", &InferenceLimits::default(), &cancel)
+            .unwrap(),
+        tok.encode("hi 你<tool_call>")
+    );
+    cancel.cancel();
+    assert!(matches!(
+        tok.encode_bounded("hi", &limits, &cancel),
+        Err(Error::Power(
+            a3s_power::error::PowerError::InferenceCancelled
+        ))
+    ));
+}
+
+#[test]
+fn cancellation_interrupts_symbol_scan_heap_merge_and_output() {
+    let tok = Tokenizer::from_bytes(&crate::test_support::tokenizer_blob(), 10).unwrap();
+    let text = "hihi".repeat(1024);
+    let mut checks = 0usize;
+    tok.encode_controlled(&text, &mut || {
+        checks += 1;
+        Ok::<_, Infallible>(())
+    })
+    .unwrap();
+    assert!(checks > 40);
+    for stop in 1..=checks {
+        let mut calls = 0usize;
+        let result = tok.encode_controlled(&text, &mut || {
+            calls += 1;
+            if calls == stop {
+                Err(())
+            } else {
+                Ok(())
+            }
+        });
+        assert!(result.is_err(), "cancellation checkpoint {stop}");
+        assert_eq!(calls, stop);
+    }
+}

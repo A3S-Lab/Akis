@@ -216,3 +216,29 @@ fn bounded_mutation_campaign_never_accepts_invalid_json() {
         }
     }
 }
+
+#[test]
+fn tool_metadata_is_bounded_before_schema_cloning() {
+    let limits = crate::InferenceLimits {
+        max_input_bytes: 256,
+        ..crate::InferenceLimits::default()
+    };
+    let model = Model::load(
+        crate::Archive::from_bytes(crate::test_support::fixture(), &limits).unwrap(),
+        crate::EmbeddedRuntime::new(crate::DevicePreference::Cpu, limits).unwrap(),
+    )
+    .unwrap();
+    let tool = Tool {
+        name: "example".into(),
+        description: "x".repeat(1024),
+        parameters: json!({"type":"object","properties":{}}),
+    };
+    let error = model
+        .complete("hi", &[tool], 1, &CancellationToken::new())
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("tool request byte limit"),
+        "{error}"
+    );
+    assert_eq!(model.runtime().admission_snapshot().active, 0);
+}

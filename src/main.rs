@@ -30,7 +30,11 @@ fn run() -> Result<()> {
         )?,
         "tokenize" if args.len() == 3 => {
             let tok = archive.tokenizer()?;
-            let ids = tok.encode(&args[2]);
+            let ids = tok.encode_bounded(
+                &args[2],
+                &InferenceLimits::default(),
+                &CancellationToken::new(),
+            )?;
             output(
                 &serde_json::json!({"ids":ids,"text":tok.decode(&ids)?}),
                 false,
@@ -51,7 +55,11 @@ fn run() -> Result<()> {
             let runtime = EmbeddedRuntime::new(DevicePreference::Cpu, InferenceLimits::default())?;
             let model = Model::load(archive, runtime)?;
             let mut ids = vec![model.tokenizer().bos];
-            ids.extend(model.tokenizer().encode(&args[2]));
+            ids.extend(model.tokenizer().encode_bounded(
+                &args[2],
+                model.runtime().limits(),
+                &CancellationToken::new(),
+            )?);
             let logits = model.logits(&ids, &CancellationToken::new())?;
             output(&serde_json::json!({"ids":ids,"logits":logits}), false)?;
         }

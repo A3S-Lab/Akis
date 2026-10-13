@@ -1,0 +1,12 @@
+{"tokens": 3, "cosine": 0.9999833703041077, "max_absolute_error": 0.30045413970947266, "reference_top": 8110, "akis_top": 8110}
+{"tokens": 31, "cosine": 0.9999954700469971, "max_absolute_error": 0.1617727279663086, "reference_top": 257, "akis_top": 257}
+{"tokens": 59, "cosine": 0.9999985098838806, "max_absolute_error": 0.14938926696777344, "reference_top": 6, "akis_top": 6}
+{"tokens": 255, "cosine": 0.9999980926513672, "max_absolute_error": 0.3061065673828125, "reference_top": 38, "akis_top": 38}
+{"tokens": 256, "cosine": 0.9999985694885254, "max_absolute_error": 0.2468395233154297, "reference_top": 38, "akis_top": 38}
+{"tokens": 257, "cosine": 0.9999987483024597, "max_absolute_error": 0.16869163513183594, "reference_top": 38, "akis_top": 38}
+{"tokens": 1023, "cosine": 0.9999982714653015, "max_absolute_error": 0.4228057861328125, "reference_top": 38, "akis_top": 38}
+{"tokens": 1024, "cosine": 0.9999988079071045, "max_absolute_error": 0.3575439453125, "reference_top": 38, "akis_top": 38}
+{"tokens": 1025, "cosine": 0.9999979734420776, "max_absolute_error": 0.4992523193359375, "reference_top": 38, "akis_top": 38}
+{"passed": 9, "comparisons": [{"tokens": 3, "cosine": 0.9999833703041077, "max_absolute_error": 0.30045413970947266, "reference_top": 8110, "akis_top": 8110}, {"tokens": 31, "cosine": 0.9999954700469971, "max_absolute_error": 0.1617727279663086, "reference_top": 257, "akis_top": 257}, {"tokens": 59, "cosine": 0.9999985098838806, "max_absolute_error": 0.14938926696777344, "reference_top": 6, "akis_top": 6}, {"tokens": 255, "cosine": 0.9999980926513672, "max_absolute_error": 0.3061065673828125, "reference_top": 38, "akis_top": 38}, {"tokens": 256, "cosine": 0.9999985694885254, "max_absolute_error": 0.2468395233154297, "reference_top": 38, "akis_top": 38}, {"tokens": 257, "cosine": 0.9999987483024597, "max_absolute_error": 0.16869163513183594, "reference_top": 38, "akis_top": 38}, {"tokens": 1023, "cosine": 0.9999982714653015, "max_absolute_error": 0.4228057861328125, "reference_top": 38, "akis_top": 38}, {"tokens": 1024, "cosine": 0.9999988079071045, "max_absolute_error": 0.3575439453125, "reference_top": 38, "akis_top": 38}, {"tokens": 1025, "cosine": 0.9999979734420776, "max_absolute_error": 0.4992523193359375, "reference_top": 38, "akis_top": 38}]}
+{"head": "confidence-pool-fallback", "dimensions": 3072, "cosine": 0.9999085068702698}
+{"head": "confidence", "reference": 0.24422524869441986, "akis": 0.244088, "absolute_error": 0.00013724869441986143}

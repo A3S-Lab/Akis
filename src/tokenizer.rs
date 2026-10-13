@@ -1,6 +1,7 @@
-use crate::{Error, Result};
+use crate::{CancellationToken, Error, InferenceLimits, Result};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
+use std::convert::Infallible;
 
 struct Symbol {
     start: usize,
@@ -134,27 +135,45 @@ impl Tokenizer {
         })
     }
 
-    fn bpe(&self, text: &str, out: &mut Vec<u32>) {
+    fn bpe_controlled<E>(
+        &self,
+        text: &str,
+        out: &mut Vec<u32>,
+        poll: &mut impl FnMut() -> std::result::Result<(), E>,
+    ) -> std::result::Result<(), E> {
         let mut symbols: Vec<Symbol> = text
             .char_indices()
             .enumerate()
-            .map(|(i, (start, c))| Symbol {
-                start,
-                end: start + c.len_utf8(),
-                previous: i.checked_sub(1),
-                next: Some(i + 1),
-                generation: 0,
+            .map(|(i, (start, c))| {
+                if i.is_multiple_of(256) {
+                    poll()?;
+                }
+                Ok(Symbol {
+                    start,
+                    end: start + c.len_utf8(),
+                    previous: i.checked_sub(1),
+                    next: Some(i + 1),
+                    generation: 0,
+                })
             })
-            .collect();
+            .collect::<std::result::Result<_, E>>()?;
         let Some(last) = symbols.last_mut() else {
-            return;
+            return Ok(());
         };
         last.next = None;
         let mut heap = BinaryHeap::new();
         for left in 0..symbols.len() - 1 {
+            if left.is_multiple_of(256) {
+                poll()?;
+            }
             self.push_merge(text, &symbols, left, &mut heap);
         }
+        let mut merges = 0usize;
         while let Some(candidate) = heap.pop() {
+            if merges.is_multiple_of(256) {
+                poll()?;
+            }
+            merges += 1;
             let (left, right) = (candidate.left, candidate.right);
             if symbols[left].next != Some(right)
                 || candidate.generations != [symbols[left].generation, symbols[right].generation]
@@ -173,8 +192,13 @@ impl Tokenizer {
             }
             self.push_merge(text, &symbols, left, &mut heap);
         }
-        let mut current = Some(0);
+        let mut current = Some(0usize);
+        let mut emitted = 0usize;
         while let Some(i) = current {
+            if emitted.is_multiple_of(256) {
+                poll()?;
+            }
+            emitted += 1;
             let s = &text[symbols[i].start..symbols[i].end];
             if let Some(&id) = self.lookup.get(s) {
                 out.push(id);
@@ -185,6 +209,12 @@ impl Tokenizer {
             }
             current = symbols[i].next;
         }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn bpe(&self, text: &str, out: &mut Vec<u32>) {
+        infallible(self.bpe_controlled(text, out, &mut || Ok::<_, Infallible>(())))
     }
 
     fn push_merge(
@@ -211,8 +241,40 @@ impl Tokenizer {
     }
 
     pub fn encode(&self, text: &str) -> Vec<u32> {
+        infallible(self.encode_controlled(text, &mut || Ok::<_, Infallible>(())))
+    }
+
+    /// Enforces Power input/state limits and polls cancellation throughout BPE.
+    /// `encode` remains an unbounded pure utility for trusted caller-owned data.
+    pub fn encode_bounded(
+        &self,
+        text: &str,
+        limits: &InferenceLimits,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<u32>> {
+        crate::model::check_cancel(cancel)?;
+        limits.validate()?;
+        if text.len() > limits.max_input_bytes {
+            return Err(Error::Request("input byte limit exceeded".into()));
+        }
+        let n = text.len() as u64 + 8;
+        // At most 3N queued pairs, Vec growth <2x, plus symbols, bytes and IDs.
+        let per_byte = 2 * std::mem::size_of::<Symbol>() + 6 * std::mem::size_of::<Merge>() + 40;
+        let bytes = n
+            .checked_mul(per_byte as u64)
+            .ok_or_else(|| Error::Request("tokenizer state size overflow".into()))?;
+        limits.checked_state_bytes(bytes, "tokenizer state")?;
+        self.encode_controlled(text, &mut || crate::model::check_cancel(cancel))
+    }
+
+    fn encode_controlled<E>(
+        &self,
+        text: &str,
+        poll: &mut impl FnMut() -> std::result::Result<(), E>,
+    ) -> std::result::Result<Vec<u32>, E> {
+        poll()?;
         if text.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let escaped = text.replace(' ', "▁");
         let escaped = if self.dummy {
@@ -223,13 +285,18 @@ impl Tokenizer {
         let mut ids = Vec::new();
         let mut buf = String::new();
         let mut at = 0;
+        let mut characters = 0usize;
         while at < escaped.len() {
+            if characters.is_multiple_of(256) {
+                poll()?;
+            }
+            characters += 1;
             if let Some(m) = self
                 .markers
                 .iter()
                 .find(|m| escaped[at..].starts_with(m.as_str()))
             {
-                self.bpe(&buf, &mut ids);
+                self.bpe_controlled(&buf, &mut ids, poll)?;
                 buf.clear();
                 ids.push(self.lookup[m]);
                 at += m.len();
@@ -238,8 +305,9 @@ impl Tokenizer {
                 at += c.len_utf8();
             }
         }
-        self.bpe(&buf, &mut ids);
-        ids
+        self.bpe_controlled(&buf, &mut ids, poll)?;
+        poll()?;
+        Ok(ids)
     }
 
     pub fn decode(&self, ids: &[u32]) -> Result<String> {
@@ -274,6 +342,16 @@ impl Tokenizer {
     }
     pub fn vocab_size(&self) -> usize {
         self.pieces.len()
+    }
+    pub(crate) fn max_token_bytes(&self) -> usize {
+        self.pieces.iter().map(String::len).max().unwrap_or(0)
+    }
+}
+
+fn infallible<T>(result: std::result::Result<T, Infallible>) -> T {
+    match result {
+        Ok(value) => value,
+        Err(never) => match never {},
     }
 }
 

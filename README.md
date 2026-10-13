@@ -51,6 +51,14 @@ numerical verification. Library consumers use `Archive`, `Model`, `Tool`,
 - CPU only; CQ weights expand to F32. Artifact size is **not** resident RAM usage.
 - Independent requests; one Power permit covers the complete request. The caller
   supplies the cancellation token. CLI OS signals are not yet wired to that token.
+- Requests use `Tokenizer::encode_bounded`, which checks Power input/state budgets
+  and polls cancellation through scanning, heap construction, merging and emission.
+  `Tokenizer::encode` remains a pure utility for trusted caller-owned input.
+- KV and convolution caches retain the effective attention/tap windows. Head cells
+  are saved only for head-bearing requests. State preflight includes probe pooling,
+  output buffers and persistent tool schemas across tokenization and inference.
+  These conservative buffer budgets are not an OS RSS limit: allocator and Candle
+  backend overhead still need platform-specific measurement.
 - Supported schema: strings, numbers, integers, booleans, null, scalar enums,
   arrays and closed objects with required/optional fields. Object properties are
   closed by default. Unsupported constraints are rejected, never ignored.
@@ -87,6 +95,9 @@ seventeen cases fail. See retained [evidence](docs/evidence/akis/20261013-bootst
 The [boundary/tokenizer checkpoint](docs/evidence/akis/20261013-boundary-tokenizer/OUTCOME.md)
 extends importer/grammar coverage and removes quadratic BPE scanning; the same
 four semantic failures remain visible.
+The [resource checkpoint](docs/evidence/akis/20261014-resources/OUTCOME.md) adds
+window-boundary numerical checks, cancellation and buffer-budget regressions,
+and a measured 25% cold-process RSS reduction for a 1025-token logits request.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

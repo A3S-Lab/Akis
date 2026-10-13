@@ -10,12 +10,19 @@ import struct
 import subprocess
 import sys
 import types
+import argparse
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-path, source, binary = sys.argv[1:]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("model")
+parser.add_argument("reference")
+parser.add_argument("binary")
+parser.add_argument("--boundaries", action="store_true", help="Also verify 255/256/257 and 1023/1024/1025 tokens")
+args = parser.parse_args()
+path, source, binary = args.model, args.reference, args.binary
 package = types.ModuleType("needle_reference")
 package.__path__ = [str(pathlib.Path(source).resolve())]
 sys.modules[package.__name__] = package
@@ -91,6 +98,12 @@ model = arch.SimpleAttentionNetwork(cfg)
 params = jax.tree_util.tree_map(jnp.asarray, params)
 
 cases = ["hello", "你好，关闭客厅的灯。", '<|im_start|>user\n<tools>[{"name":"set_lights","description":"Turn lights on or off","parameters":{"type":"object","properties":{"room":{"type":"string"},"on":{"type":"boolean"}},"required":["room","on"]}}]</tools>\nturn on the kitchen lights<|im_end|>\n<|im_start|>assistant\n']
+if args.boundaries:
+    for length in [255,256,257,1023,1024,1025]:
+        prefix = len(tok.encode("<think>"))-1
+        text = "<think>" * (length-1-prefix)
+        assert len(tok.encode(text))+1 == length
+        cases.append(text)
 results = []
 for text in cases:
     actual = json.loads(subprocess.check_output([binary, "logits", path, text], text=True))

@@ -2,6 +2,7 @@ use crate::math::{dot, norm, quant, rms, rope, sigmoid, sinkhorn, softmax};
 use crate::{Archive, CancellationToken, EmbeddedRuntime, Error, Geometry, Result, Tokenizer};
 use a3s_power::inference::{ExecutionDigest, ExecutionReceipt, ModelIdentity};
 use candle_core::Tensor;
+use std::collections::VecDeque;
 
 /// Reference CPU implementation. Power supplies admission and the tensor device.
 pub struct Model {
@@ -20,18 +21,19 @@ pub struct Model {
 
 #[derive(Default)]
 struct LayerState {
-    q: Vec<Vec<f32>>,
-    k: Vec<Vec<f32>>,
-    v: Vec<Vec<f32>>,
-    keys: Vec<Vec<f32>>,
-    values: Vec<Vec<f32>>,
+    q: VecDeque<Vec<f32>>,
+    k: VecDeque<Vec<f32>>,
+    v: VecDeque<Vec<f32>>,
+    keys: VecDeque<Vec<f32>>,
+    values: VecDeque<Vec<f32>>,
 }
 
 struct State {
     tokens: Vec<u32>,
     layers: Vec<LayerState>,
-    engram_values: Vec<Vec<Vec<f32>>>,
+    engram_values: Vec<VecDeque<Vec<f32>>>,
     cells: Vec<Vec<f32>>,
+    collect_cells: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -272,18 +274,25 @@ impl Model {
     fn affine_input(&self, i: usize, x: &[f32]) -> Result<Vec<f32>> {
         self.linear_tensor(&self.weights[i].t()?, x)
     }
-    fn state(&self) -> State {
+    fn state(&self, collect_cells: bool) -> State {
         State {
             tokens: Vec::new(),
             layers: (0..self.geometry.layers)
                 .map(|_| LayerState::default())
                 .collect(),
-            engram_values: vec![Vec::new(); self.geometry.engram_sites.len()],
+            engram_values: vec![VecDeque::new(); self.geometry.engram_sites.len()],
             cells: Vec::new(),
+            collect_cells,
         }
     }
 
-    fn check_request(&self, tokens: &[u32], additional: usize) -> Result<()> {
+    fn check_request(
+        &self,
+        tokens: &[u32],
+        additional: usize,
+        collect_cells: bool,
+        reserved_bytes: u64,
+    ) -> Result<()> {
         let total = tokens
             .len()
             .checked_add(additional)
@@ -297,35 +306,103 @@ impl Model {
         {
             return Err(Error::Request("token or context limit exceeded".into()));
         }
-        // Includes unquantized reference caches, convolution histories and per-step scratch.
-        let elements = total
-            .checked_mul(g.layers)
-            .and_then(|n| {
-                n.checked_mul(
-                    (g.heads + g.kv_heads) * g.qk_dim
-                        + g.kv_heads * g.v_dim
-                        + g.kv_heads * (g.qk_dim + g.v_dim)
-                        + g.width * 8,
-                )
-            })
-            .ok_or_else(|| Error::Request("state size overflow".into()))?;
-        lim.checked_state_bytes(
-            (elements as u64)
-                .checked_mul(4)
-                .ok_or_else(|| Error::Request("state size overflow".into()))?,
-            "Needle reference state",
+        let mut bytes = reserved_bytes;
+        let vector = std::mem::size_of::<Vec<f32>>();
+        // Allow Vec/VecDeque growth and overlapping input/output temporaries.
+        add_bytes(&mut bytes, &[2, total, 4])?;
+        add_bytes(&mut bytes, &[2, tokens.len(), 4])?;
+        add_bytes(
+            &mut bytes,
+            &[2, g.layers + 4, std::mem::size_of::<LayerState>()],
         )?;
+        for layer in 0..g.layers {
+            let conv = total.min(g.conv_taps.max(1));
+            let window = self.attention_window(layer, total);
+            for (count, width) in [
+                (conv, g.heads * g.qk_dim),
+                (conv, g.kv_heads * g.qk_dim),
+                (conv, g.kv_heads * g.v_dim),
+                (window, g.kv_heads * g.qk_dim),
+                (window, g.kv_heads * g.v_dim),
+            ] {
+                add_bytes(&mut bytes, &[2, count, width, 4])?;
+                add_bytes(&mut bytes, &[2, count + 4, vector])?;
+            }
+        }
+        if !g.engram_sites.is_empty() {
+            let history = total.min(1 + (g.engram_taps - 1) * g.engram_dilation);
+            add_bytes(&mut bytes, &[2, g.engram_sites.len(), history, g.width, 4])?;
+            add_bytes(&mut bytes, &[2, g.engram_sites.len(), history + 4, vector])?;
+        }
+        if collect_cells {
+            lim.checked_elements(&[total, g.layers + 1, g.width], "head cells")?;
+            add_bytes(&mut bytes, &[2, total, g.layers + 1, g.width, 4])?;
+            add_bytes(&mut bytes, &[2, total + 4, vector])?;
+        }
+        // Reference forward vectors and cloned norm/convolution/Monarch weights.
+        for elements in [
+            g.width * (8 * g.lanes + 32),
+            32 * g.hadamard,
+            8 * g.lanes * g.lanes,
+            8 * g.heads * (g.qk_dim + g.v_dim),
+            8 * g.kv_heads * (g.qk_dim + g.v_dim),
+            4 * g.out_vocab,
+            4 * g.engram_tables * g.engram_dim,
+            3 * g.layers,
+            g.conv_taps * ((g.heads + g.kv_heads) * g.qk_dim + g.kv_heads * g.v_dim),
+            g.engram_taps * g.width,
+        ] {
+            add_bytes(&mut bytes, &[elements, 4])?;
+        }
+        if collect_cells {
+            let mut largest = 0u64;
+            for &(_, b) in &self.heads {
+                let rows = g.layers + 1;
+                let k = self.weights[b + 1].dims()[1];
+                let q = self.weights[b + 2].dims()[0];
+                let mut head = 0;
+                add_bytes(&mut head, &[2, rows, k, g.width, 4])?;
+                add_bytes(&mut head, &[2, rows * k + 4, vector])?;
+                add_bytes(&mut head, &[2, rows, k, 4])?;
+                add_bytes(&mut head, &[2, q, rows, k, 4])?;
+                add_bytes(&mut head, &[2, q + 4, g.width, 4])?;
+                add_bytes(&mut head, &[4, self.weights[b + 4].dims()[0], 4])?;
+                add_bytes(&mut head, &[2, total + rows * k + 8, 4])?;
+                largest = largest.max(head);
+            }
+            bytes = bytes
+                .checked_add(largest)
+                .ok_or_else(|| Error::Request("state size overflow".into()))?;
+        }
+        add_bytes(
+            &mut bytes,
+            &[16, additional, self.tokenizer.max_token_bytes()],
+        )?;
+        lim.checked_state_bytes(bytes, "Needle reference state")?;
         Ok(())
     }
 
+    fn attention_window(&self, layer: usize, available: usize) -> usize {
+        let g = &self.geometry;
+        let mut window = available;
+        if g.global_mask & (1 << layer) == 0 && g.sliding_window > 0 {
+            window = window.min(g.sliding_window);
+        }
+        if g.kv_window > 0 {
+            window = window.min(g.kv_window);
+        }
+        window
+    }
+
     pub fn logits(&self, tokens: &[u32], cancel: &CancellationToken) -> Result<Vec<f32>> {
-        self.check_request(tokens, 0)?;
         let _permit = self.runtime.begin(cancel)?;
-        let mut state = self.state();
+        self.check_request(tokens, 0, false, 0)?;
+        let mut state = self.state(false);
         let mut logits = Vec::new();
         for &token in tokens {
             logits = self.step(token, &mut state, cancel)?;
         }
+        check_cancel(cancel)?;
         Ok(logits)
     }
 
@@ -335,24 +412,35 @@ impl Model {
         max_tokens: usize,
         cancel: &CancellationToken,
     ) -> Result<Generation> {
-        self.generate_constrained(prompt, max_tokens, cancel, None)
+        let _permit = self.runtime.begin(cancel)?;
+        self.generate_admitted(prompt, max_tokens, cancel, None, 0)
     }
 
-    pub(crate) fn generate_constrained(
+    pub(crate) fn generate_admitted(
         &self,
         prompt: &str,
         max_tokens: usize,
         cancel: &CancellationToken,
         schema: Option<&crate::structured::Schema>,
+        reserved_bytes: u64,
     ) -> Result<Generation> {
         if prompt.len() > self.runtime.limits().max_input_bytes || max_tokens == 0 {
             return Err(Error::Request("invalid prompt or generation bound".into()));
         }
+        let mut token_limits = self.runtime.limits().clone();
+        token_limits.max_state_bytes = token_limits
+            .max_state_bytes
+            .checked_sub(reserved_bytes)
+            .filter(|&n| n > 0)
+            .ok_or_else(|| Error::Request("tool schema exhausted the state budget".into()))?;
         let mut input = vec![self.tokenizer.bos];
-        input.extend(self.tokenizer.encode(prompt));
-        self.check_request(&input, max_tokens)?;
-        let _permit = self.runtime.begin(cancel)?;
-        let mut state = self.state();
+        input.extend(
+            self.tokenizer
+                .encode_bounded(prompt, &token_limits, cancel)?,
+        );
+        let collect_cells = self.heads.iter().any(|(code, _)| *code == 2);
+        self.check_request(&input, max_tokens, collect_cells, reserved_bytes)?;
+        let mut state = self.state(collect_cells);
         let mut logits = Vec::new();
         for &token in &input {
             logits = self.step(token, &mut state, cancel)?;
@@ -421,6 +509,9 @@ impl Model {
             .map(|&(_, b)| {
                 self.probe(&state, b, cancel).and_then(|pool| {
                     let score = self.linear(b + 4, &pool)?[0] + self.flat(b + 5)?[0];
+                    if !score.is_finite() {
+                        return Err(Error::Request("non-finite confidence head".into()));
+                    }
                     Ok(sigmoid(score))
                 })
             })
@@ -431,8 +522,10 @@ impl Model {
             ExecutionDigest::token_ids(&input),
             ExecutionDigest::token_ids(&output),
         );
+        let text = self.tokenizer.decode(&output)?;
+        check_cancel(cancel)?;
         Ok(Generation {
-            text: self.tokenizer.decode(&output)?,
+            text,
             mean_token_probability: sum / output.len() as f32,
             token_ids: output,
             input_tokens: input.len(),
@@ -443,14 +536,17 @@ impl Model {
     }
 
     pub fn embed(&self, text: &str, cancel: &CancellationToken) -> Result<Vec<f32>> {
+        let _permit = self.runtime.begin(cancel)?;
         if text.len() > self.runtime.limits().max_input_bytes {
             return Err(Error::Request("input byte limit exceeded".into()));
         }
         let mut ids = vec![self.tokenizer.bos];
-        ids.extend(self.tokenizer.encode(text));
-        self.check_request(&ids, 0)?;
-        let _permit = self.runtime.begin(cancel)?;
-        let mut state = self.state();
+        ids.extend(
+            self.tokenizer
+                .encode_bounded(text, self.runtime.limits(), cancel)?,
+        );
+        self.check_request(&ids, 0, true, 0)?;
+        let mut state = self.state(true);
         for id in ids {
             self.step(id, &mut state, cancel)?;
         }
@@ -465,6 +561,9 @@ impl Model {
             v = self.linear(b + 4, &v)?;
         }
         let scale = (dot(&v, &v) + 1e-12).sqrt();
+        if !scale.is_finite() || v.iter().any(|x| !x.is_finite()) {
+            return Err(Error::Request("non-finite embedding head".into()));
+        }
         for x in &mut v {
             *x /= scale;
         }
@@ -488,17 +587,24 @@ impl Model {
                     .cells
                     .iter()
                     .zip(&state.tokens)
-                    .map(|(t, &id)| {
-                        if id == self.tokenizer.pad {
+                    .enumerate()
+                    .map(|(i, (t, &id))| {
+                        if i.is_multiple_of(64) {
+                            check_cancel(cancel)?;
+                        }
+                        Ok(if id == self.tokenizer.pad {
                             f32::NEG_INFINITY
                         } else {
                             dot(&t[row * d..(row + 1) * d], &probe) / (d as f32).sqrt()
-                        }
+                        })
                     })
-                    .collect();
+                    .collect::<Result<_>>()?;
                 softmax(&mut scores);
                 let mut r = vec![0.0; d];
-                for (t, &p) in state.cells.iter().zip(&scores) {
+                for (at, (t, &p)) in state.cells.iter().zip(&scores).enumerate() {
+                    if at.is_multiple_of(64) {
+                        check_cancel(cancel)?;
+                    }
                     for i in 0..d {
                         r[i] += p * t[row * d + i];
                     }
@@ -518,28 +624,39 @@ impl Model {
             let mut scores: Vec<f32> = pooled
                 .iter()
                 .enumerate()
-                .map(|(i, r)| dot(r, &w) / (d as f32).sqrt() + bias[query * rows * k + i])
-                .collect();
+                .map(|(i, r)| {
+                    if i.is_multiple_of(64) {
+                        check_cancel(cancel)?;
+                    }
+                    Ok(dot(r, &w) / (d as f32).sqrt() + bias[query * rows * k + i])
+                })
+                .collect::<Result<_>>()?;
             softmax(&mut scores);
             let mut r = vec![0.0; d];
-            for (v, p) in pooled.iter().zip(scores) {
+            for (at, (v, p)) in pooled.iter().zip(scores).enumerate() {
+                if at.is_multiple_of(64) {
+                    check_cancel(cancel)?;
+                }
                 for i in 0..d {
                     r[i] += p * v[i];
                 }
             }
             out.extend(r);
         }
+        if out.iter().any(|v| !v.is_finite()) {
+            return Err(Error::Request("non-finite probe output".into()));
+        }
         Ok(out)
     }
 
     fn tapped(
         &self,
-        history: &[Vec<f32>],
+        history: &VecDeque<Vec<f32>>,
         weight: usize,
         taps: usize,
         dilation: usize,
     ) -> Result<Vec<f32>> {
-        let Some(last) = history.last() else {
+        let Some(last) = history.back() else {
             return Err(Error::Request("empty convolution state".into()));
         };
         let mut out = vec![0.0; last.len()];
@@ -584,7 +701,11 @@ impl Model {
         quant(&mut e);
         let k = self.linear(base + 1, &e)?;
         let v = self.linear(base + 2, &e)?;
-        state.engram_values[site].push(v);
+        push_recent(
+            &mut state.engram_values[site],
+            v,
+            1 + (g.engram_taps - 1) * g.engram_dilation,
+        );
         Ok((
             k,
             self.tapped(
@@ -608,9 +729,10 @@ impl Model {
         let o = b + if g.conv_taps > 0 { 3 } else { 0 };
         let mut x = x.to_vec();
         quant(&mut x);
-        state.q.push(self.linear(b + 1, &x)?);
-        state.k.push(self.linear(b + 2, &x)?);
-        state.v.push(self.linear(b + 3, &x)?);
+        let history = g.conv_taps.max(1);
+        push_recent(&mut state.q, self.linear(b + 1, &x)?, history);
+        push_recent(&mut state.k, self.linear(b + 2, &x)?, history);
+        push_recent(&mut state.v, self.linear(b + 3, &x)?, history);
         let (q, k, v) = if g.conv_taps > 0 {
             (
                 self.tapped(&state.q, b + 4, g.conv_taps, 1)?,
@@ -619,9 +741,9 @@ impl Model {
             )
         } else {
             (
-                state.q[pos].clone(),
-                state.k[pos].clone(),
-                state.v[pos].clone(),
+                state.q[state.q.len() - 1].clone(),
+                state.k[state.k.len() - 1].clone(),
+                state.v[state.v.len() - 1].clone(),
             )
         };
         let qscale = self.flat(o + 4)?;
@@ -646,21 +768,14 @@ impl Model {
         for x in v.chunks_exact_mut(g.v_dim) {
             quant(x);
         }
-        state.keys.push(k);
-        state.values.push(v);
-        let mut window = pos + 1;
-        if g.global_mask & (1 << layer) == 0 && g.sliding_window > 0 {
-            window = window.min(g.sliding_window);
-        }
-        if g.kv_window > 0 {
-            window = window.min(g.kv_window);
-        }
+        let window = self.attention_window(layer, pos + 1);
+        push_recent(&mut state.keys, k, window);
+        push_recent(&mut state.values, v, window);
         let mut out = vec![0.0; g.heads * g.v_dim];
         for head in 0..g.heads {
             let kh = head / (g.heads / g.kv_heads);
             let query = &q[head * g.qk_dim..(head + 1) * g.qk_dim];
-            let start = pos + 1 - window;
-            let mut scores: Vec<f32> = (start..=pos)
+            let mut scores: Vec<f32> = (0..state.keys.len())
                 .map(|t| {
                     dot(query, &state.keys[t][kh * g.qk_dim..(kh + 1) * g.qk_dim])
                         / (g.qk_dim as f32).sqrt()
@@ -669,7 +784,7 @@ impl Model {
             softmax(&mut scores);
             for (j, p) in scores.iter().enumerate() {
                 for i in 0..g.v_dim {
-                    out[head * g.v_dim + i] += p * state.values[start + j][kh * g.v_dim + i];
+                    out[head * g.v_dim + i] += p * state.values[j][kh * g.v_dim + i];
                 }
             }
         }
@@ -752,7 +867,11 @@ impl Model {
             .map(|v| v * (d as f32).sqrt())
             .collect();
         let mut stream = embedding.repeat(n);
-        let mut cells = embedding;
+        let mut cells = if state.collect_cells {
+            embedding
+        } else {
+            Vec::new()
+        };
         let ap = self.flat(self.mhc)?;
         let ao = self.flat(self.mhc + 1)?;
         let ar = self.flat(self.mhc + 2)?;
@@ -814,8 +933,10 @@ impl Model {
                 }
             }
             stream = next;
-            for i in 0..d {
-                cells.push((0..n).map(|lane| stream[lane * d + i]).sum::<f32>() / n as f32);
+            if state.collect_cells {
+                for i in 0..d {
+                    cells.push((0..n).map(|lane| stream[lane * d + i]).sum::<f32>() / n as f32);
+                }
             }
         }
         let mut hidden = vec![0.0; d];
@@ -831,12 +952,31 @@ impl Model {
             return Err(Error::Request("non-finite model output".into()));
         }
         check_cancel(cancel)?;
-        state.cells.push(cells);
+        if state.collect_cells {
+            state.cells.push(cells);
+        }
         Ok(logits)
     }
 }
 
-fn check_cancel(cancel: &CancellationToken) -> Result<()> {
+fn push_recent(history: &mut VecDeque<Vec<f32>>, value: Vec<f32>, capacity: usize) {
+    if history.len() == capacity {
+        history.pop_front();
+    }
+    history.push_back(value);
+}
+
+fn add_bytes(total: &mut u64, factors: &[usize]) -> Result<()> {
+    let bytes = factors
+        .iter()
+        .try_fold(1u64, |n, &v| n.checked_mul(v as u64));
+    *total = bytes
+        .and_then(|n| total.checked_add(n))
+        .ok_or_else(|| Error::Request("state size overflow".into()))?;
+    Ok(())
+}
+
+pub(crate) fn check_cancel(cancel: &CancellationToken) -> Result<()> {
     if cancel.is_cancelled() {
         Err(a3s_power::error::PowerError::InferenceCancelled.into())
     } else {
