@@ -340,6 +340,11 @@ impl Tokenizer {
     pub fn token_id(&self, piece: &str) -> Option<u32> {
         self.lookup.get(piece).copied()
     }
+
+    #[cfg(test)]
+    pub(crate) fn alias_piece(&mut self, piece: &str, id: u32) {
+        self.lookup.insert(piece.to_string(), id);
+    }
     pub fn vocab_size(&self) -> usize {
         self.pieces.len()
     }

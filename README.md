@@ -50,7 +50,9 @@ numerical verification. Library consumers use `Archive`, `Model`, `Tool`,
 
 - CPU only; CQ weights expand to F32. Artifact size is **not** resident RAM usage.
 - Independent requests; one Power permit covers the complete request. The caller
-  supplies the cancellation token. CLI OS signals are not yet wired to that token.
+  supplies the cancellation token. On Unix the CLI installs `SIGINT` and `SIGTERM`:
+  the first signal requests cancellation, and a second signal restores the
+  default termination action. Other platforms do not install a handler.
 - Requests use `Tokenizer::encode_bounded`, which checks Power input/state budgets
   and polls cancellation through scanning, heap construction, merging and emission.
   `Tokenizer::encode` remains a pure utility for trusted caller-owned input.
@@ -98,6 +100,9 @@ four semantic failures remain visible.
 The [resource checkpoint](docs/evidence/akis/20261014-resources/OUTCOME.md) adds
 window-boundary numerical checks, cancellation and buffer-budget regressions,
 and a measured 25% cold-process RSS reduction for a 1025-token logits request.
+The [signal checkpoint](docs/evidence/akis/20261014-signals/OUTCOME.md) wires
+Unix process signals into those checkpoints and proves grammar, head and
+pre-return cancellation discard the result.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

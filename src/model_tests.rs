@@ -184,3 +184,87 @@ fn cancellation_during_forward_releases_the_power_permit() {
     assert_eq!(m.runtime.admission_snapshot().active, 0);
     assert!(m.logits(&[4], &CancellationToken::new()).is_ok());
 }
+
+fn assert_cancelled(error: Error) {
+    assert!(
+        matches!(
+            error,
+            Error::Power(a3s_power::error::PowerError::InferenceCancelled)
+        ),
+        "{error}"
+    );
+}
+
+fn zero_unembedding(m: &mut Model) {
+    let shape = m.weights[0].dims().to_vec();
+    m.weights[0] = Tensor::zeros(
+        shape.as_slice(),
+        candle_core::DType::F32,
+        m.runtime.device().tensor_device(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn grammar_cancellation_does_not_return_a_tool_call() {
+    let mut bytes = crate::test_support::fixture();
+    bytes[13 * 4..14 * 4].copy_from_slice(&512u32.to_le_bytes());
+    let mut m = Model::load(
+        Archive::from_bytes(bytes, &InferenceLimits::default()).unwrap(),
+        EmbeddedRuntime::new(DevicePreference::Cpu, InferenceLimits::default()).unwrap(),
+    )
+    .unwrap();
+    zero_unembedding(&mut m);
+    // Equal logits select token 0. Point the tool-call marker at that token
+    // so the next decode step enters grammar without a semantic word list.
+    m.tokenizer.alias_piece("<tool_call>", 0);
+    let _arm = crate::test_support::arm("grammar");
+    let tool = crate::Tool {
+        name: "example".into(),
+        description: "d".into(),
+        parameters: serde_json::json!({"type":"object","properties":{}}),
+    };
+    let error = m
+        .complete("hi", &[tool], 4, &CancellationToken::new())
+        .unwrap_err();
+    assert_cancelled(error);
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+}
+
+#[test]
+fn head_cancellation_does_not_return_a_score() {
+    let _arm = crate::test_support::arm("head");
+    let mut m = model(InferenceLimits::default());
+    let b = m.weights.len();
+    for shape in [
+        vec![2, 2],
+        vec![2, 1],
+        vec![1, 2],
+        vec![1, 2, 1],
+        vec![1, 2],
+        vec![1],
+    ] {
+        m.weights.push(
+            Tensor::zeros(
+                shape.as_slice(),
+                candle_core::DType::F32,
+                m.runtime.device().tensor_device(),
+            )
+            .unwrap(),
+        );
+    }
+    m.heads.push((2, b));
+    m.validate_shapes().unwrap();
+    let error = m.generate("hi", 1, &CancellationToken::new()).unwrap_err();
+    assert_cancelled(error);
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+}
+
+#[test]
+fn cancellation_before_return_discards_the_generation() {
+    let _arm = crate::test_support::arm("before-return");
+    let m = model(InferenceLimits::default());
+    let error = m.generate("hi", 1, &CancellationToken::new()).unwrap_err();
+    assert_cancelled(error);
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+}

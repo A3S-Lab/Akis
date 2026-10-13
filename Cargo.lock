@@ -9,6 +9,7 @@ dependencies = [
  "a3s-power",
  "candle-core",
  "half",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

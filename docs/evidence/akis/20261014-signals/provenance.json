@@ -1,0 +1,11 @@
+{
+  "parent_commit": "554d72a4a660f60d780fe59b94c2453e5d7c9c68",
+  "date": "2026-10-14 Asia/Shanghai",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "hashes": {
+    "target/release/a3s-akis": "3fbbfc2a775b1880371e5d8ec6b756c4cd1d061a52abfe8d5fb7e2735dbf12cb",
+    ".cache/needle3.cact": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+    "Cargo.lock": "60f3af39d03331f2e41c69751add8992461bc31b8bfb4232feb0ae0b925ef44b",
+    "tests/e2e/cases/tool_calls.json": "fce6550d61d2b3041cd4bcd4d19605366bbea6585a5d0bd9ba19a4adbb04c6ef"
+  }
+}

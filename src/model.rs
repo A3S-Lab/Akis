@@ -3,6 +3,20 @@ use crate::{Archive, CancellationToken, EmbeddedRuntime, Error, Geometry, Result
 use a3s_power::inference::{ExecutionDigest, ExecutionReceipt, ModelIdentity};
 use candle_core::Tensor;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static PROCESS_STOP: AtomicBool = AtomicBool::new(false);
+
+/// Process-wide stop set by the CLI signal handler. The handler may only
+/// store this flag; inference polls it from normal code and then cancels the
+/// caller token. A second OS signal is handled by the CLI, not here.
+pub fn request_process_stop() {
+    PROCESS_STOP.store(true, Ordering::SeqCst);
+}
+
+pub fn process_stop_requested() -> bool {
+    PROCESS_STOP.load(Ordering::SeqCst)
+}
 
 /// Reference CPU implementation. Power supplies admission and the tensor device.
 pub struct Model {
@@ -452,6 +466,7 @@ impl Model {
         for _ in 0..max_tokens {
             check_cancel(cancel)?;
             if let (Some(schema), Some(bytes)) = (schema, body.as_ref()) {
+                checkpoint(cancel, "grammar")?;
                 for (id, logit) in logits.iter_mut().enumerate() {
                     if id.is_multiple_of(64) {
                         check_cancel(cancel)?;
@@ -507,6 +522,7 @@ impl Model {
             .iter()
             .find(|(code, _)| *code == 2)
             .map(|&(_, b)| {
+                checkpoint(cancel, "head")?;
                 self.probe(&state, b, cancel).and_then(|pool| {
                     let score = self.linear(b + 4, &pool)?[0] + self.flat(b + 5)?[0];
                     if !score.is_finite() {
@@ -523,7 +539,7 @@ impl Model {
             ExecutionDigest::token_ids(&output),
         );
         let text = self.tokenizer.decode(&output)?;
-        check_cancel(cancel)?;
+        checkpoint(cancel, "before-return")?;
         Ok(Generation {
             text,
             mean_token_probability: sum / output.len() as f32,
@@ -977,11 +993,22 @@ fn add_bytes(total: &mut u64, factors: &[usize]) -> Result<()> {
 }
 
 pub(crate) fn check_cancel(cancel: &CancellationToken) -> Result<()> {
+    if process_stop_requested() {
+        cancel.cancel();
+    }
     if cancel.is_cancelled() {
         Err(a3s_power::error::PowerError::InferenceCancelled.into())
     } else {
         Ok(())
     }
+}
+
+pub(crate) fn checkpoint(cancel: &CancellationToken, stage: &'static str) -> Result<()> {
+    #[cfg(test)]
+    crate::test_support::hit(stage, cancel);
+    #[cfg(not(test))]
+    let _ = stage;
+    check_cancel(cancel)
 }
 
 #[cfg(test)]
