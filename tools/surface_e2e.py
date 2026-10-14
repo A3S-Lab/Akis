@@ -12,18 +12,29 @@ import sys
 from live_e2e import MODEL_SHA, TOOL, model_prompt, token_record
 
 
+# Last matching rule wins. File and process access stay open; network does not.
+OFFLINE = "(version 1)(allow default)(deny network*)"
+
+
 def digest(path):
     return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 
 
+def launch(binary, args, request=None):
+    try:
+        return subprocess.run(
+            ["sandbox-exec", "-p", OFFLINE, binary, *args],
+            input=request,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except FileNotFoundError as exc:
+        raise SystemExit("sandbox-exec is required to prove offline inference") from exc
+
+
 def run(binary, model, command, *tail, request=None):
-    proc = subprocess.run(
-        [binary, command, model, *tail],
-        input=request,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    proc = launch(binary, [command, model, *tail], request)
     if proc.returncode != 0 or proc.stderr or not proc.stdout:
         raise SystemExit(proc.stderr.strip() or f"{command} exit {proc.returncode}")
     return json.loads(proc.stdout)
@@ -41,6 +52,14 @@ def main():
     if digest(model) != MODEL_SHA:
         print(json.dumps({"status": "blocked", "reason": "model sha256 differs"}))
         return 2
+    missing = launch(binary, ["inspect", str(pathlib.Path(model).with_name("missing-akis.cact"))])
+    if (
+        missing.returncode == 0
+        or missing.stdout
+        or "panicked" in missing.stderr
+        or "No such file" not in missing.stderr
+    ):
+        raise SystemExit(missing.stderr.strip() or "missing model did not fail closed")
     info = run(binary, model, "inspect")
     geometry = info["geometry"]
     assert info["sha256"] == MODEL_SHA and info["tensors"] == 581

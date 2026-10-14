@@ -166,6 +166,41 @@ fn explicit_weights_need_no_home_and_no_writable_directory() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn inference_does_not_require_network() {
+    let root = std::env::temp_dir().join(format!("akis-offline-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let bytes = synthetic_fixture::fixture();
+    let model = root.join("fixture.cact");
+    std::fs::write(&model, &bytes).unwrap();
+    let loaded = sandboxed(&["inspect", model.to_str().unwrap()]);
+    let stderr = String::from_utf8_lossy(&loaded.stderr);
+    assert!(loaded.status.success(), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert_eq!(sha256_field(&loaded), file_sha256(&bytes));
+    let missing = root.join("missing-akis.cact");
+    let denied = sandboxed(&["inspect", missing.to_str().unwrap()]);
+    let stderr = String::from_utf8_lossy(&denied.stderr);
+    assert_ne!(denied.status.code(), Some(0), "{stderr}");
+    assert!(denied.stdout.is_empty(), "{denied:?}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert!(stderr.contains("No such file"), "{stderr}");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn sandboxed(args: &[&str]) -> Output {
+    Command::new("sandbox-exec")
+        .arg("-p")
+        .arg("(version 1)(allow default)(deny network*)")
+        .arg(executable())
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap()
+}
+
 fn file_sha256(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     format!("{:x}", Sha256::digest(bytes))

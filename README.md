@@ -260,6 +260,12 @@ the returned token ids. One changed token does not match. The kitchen head
 score remains 0.8660065. The campaign remains 14 passed and 3 failed. A Needle
 replacement is not certified.
 
+The [offline checks](docs/evidence/akis/20261014-offline/OUTCOME.md) run the
+seven commands with network denied. A missing archive fails with `No such
+file` and does not panic. The kitchen head score remains 0.8660065. The
+campaign remains 14 passed and 3 failed. A Needle replacement is not
+certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 
