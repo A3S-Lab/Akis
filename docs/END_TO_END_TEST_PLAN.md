@@ -373,6 +373,8 @@ hello、256-token `<think>` 和 2048-token `user` 的 logits 相对上一版最�
 
 随后，合成工件在没有探针清单时仍可加载。宽度向量只存一个元素时，错误是 `tensor 1 expected shape [2]`。投影存成 `[4, 1]` 时，错误是 `tensor 2 expected shape [2, 2]`。清单值 0、1.5、4，以及先 2 后 1，错误是 `invalid probe head manifest`。只有一个 `1`，或先 1 后 2 但没有对应张量，错误是 `probe tensor count mismatch`。code 1 的输出宽度为 1、code 2 的输出宽度为 1、code 3 的输出宽度为 3，并且 gain 的行数比层数多 1 时，可以加载。gain 为 3 行时，错误是 `invalid probe geometry`。code 2 的输出宽度为 2，或 code 3 的输出宽度为 1，错误是 `invalid probe output width`。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。61 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
 
+随后，合成工件打开之后，投影载荷的字节数必须等于形状乘积。`[2, 2]` 记录的字节数为 0、12、15 或 20，以及 `[10, 2]` 嵌入的 76 字节，错误都是 `projection shape mismatch`。错误文本不含 `expected shape`，也不含 `projection rank`。宽度向量缩短到 4 字节不是投影，加载仍然成功。文件目录里的长度不符仍由打开时的检查拒绝。这一条测的是打开之后的加载检查。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。62 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
+
 ## 10. 扩展轨道的额外出口
 
 - **训练/量化/导出**：固定 seed 的小数据训练、loss 与 held-out 质量、训练→导出→

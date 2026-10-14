@@ -1003,3 +1003,46 @@ fn probe_manifest_and_tensor_shapes_fail_closed() {
         "invalid probe geometry",
     );
 }
+
+fn reject_projection_length(archive: Archive) {
+    match load_cpu(archive) {
+        Ok(_) => panic!("projection loaded with a payload that does not match its shape"),
+        Err(error) => {
+            let text = error.to_string();
+            assert!(text.contains("projection shape mismatch"), "{text}");
+            assert!(!text.contains("expected shape"), "{text}");
+            assert!(!text.contains("projection rank"), "{text}");
+        }
+    }
+}
+
+#[test]
+fn projection_payload_length_must_match_the_shape() {
+    let stock = parse_archive(fixture()).unwrap();
+    assert_eq!(stock.records[0].dtype, 2);
+    assert_eq!(stock.records[0].shape, [10, 2]);
+    assert_eq!(stock.records[0].bytes, 80);
+    assert_eq!(stock.records[1].dtype, 2);
+    assert_eq!(stock.records[1].shape, [2]);
+    assert_eq!(stock.records[1].bytes, 8);
+    assert_eq!(stock.records[2].dtype, 2);
+    assert_eq!(stock.records[2].shape, [2, 2]);
+    assert_eq!(stock.records[2].bytes, 16);
+    assert!(stock.records[2].offset + 20 <= stock.data.len());
+    load_cpu(parse_archive(fixture()).unwrap()).unwrap();
+
+    for bytes in [0, 12, 15, 20] {
+        let mut archive = parse_archive(fixture()).unwrap();
+        archive.records[2].bytes = bytes;
+        reject_projection_length(archive);
+    }
+
+    let mut embedding = parse_archive(fixture()).unwrap();
+    embedding.records[0].bytes = 76;
+    reject_projection_length(embedding);
+
+    let mut width = parse_archive(fixture()).unwrap();
+    width.records[1].bytes = 4;
+    let loaded = load_cpu(width).unwrap();
+    assert_eq!(loaded.geometry().width, 2);
+}
