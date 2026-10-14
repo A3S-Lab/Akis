@@ -166,6 +166,13 @@ seconds, and a 6-core row split still took 3.16 seconds, so the kernel was
 not kept. Cold RSS on that sample fell from 272,334,848 bytes to 93,667,328
 bytes on the trial binary only. Packed CQ GEMM and a Needle replacement are
 not certified.
+The [prefix unembed](docs/evidence/akis/20261014-prefix-logits/OUTCOME.md)
+skips the output projection on every token whose logits are discarded.
+Hello, the 256-token logits, and the 2048-token logits matched the previous
+binary with max absolute error 0 and the same top-1. One cold 2048-token
+sample took 11.40 seconds and 272,924,672 bytes, beside 12.27 seconds on
+the previous binary. The campaign remains 13 passed and 4 failed. Packed CQ
+GEMM and a Needle replacement are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

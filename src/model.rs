@@ -432,7 +432,7 @@ impl Model {
         self.check_request(tokens, 0, false, 0)?;
         let mut state = self.capturing_state();
         for &token in tokens {
-            self.step(token, &mut state, cancel)?;
+            self.step(token, &mut state, cancel, StepLogits::Omit)?;
         }
         check_cancel(cancel)?;
         let width = self.geometry.width;
@@ -569,8 +569,14 @@ impl Model {
         self.check_request(tokens, 0, false, 0)?;
         let mut state = self.state(false);
         let mut logits = Vec::new();
-        for &token in tokens {
-            logits = self.step(token, &mut state, cancel)?;
+        let last = tokens.len().saturating_sub(1);
+        for (index, &token) in tokens.iter().enumerate() {
+            let mode = if index == last {
+                StepLogits::Return
+            } else {
+                StepLogits::Omit
+            };
+            logits = self.step(token, &mut state, cancel, mode)?;
         }
         check_cancel(cancel)?;
         Ok(logits)
@@ -612,8 +618,14 @@ impl Model {
         self.check_request(&input, max_tokens, collect_cells, reserved_bytes)?;
         let mut state = self.state(collect_cells);
         let mut logits = Vec::new();
-        for &token in &input {
-            logits = self.step(token, &mut state, cancel)?;
+        let last = input.len().saturating_sub(1);
+        for (index, &token) in input.iter().enumerate() {
+            let mode = if index == last {
+                StepLogits::Return
+            } else {
+                StepLogits::Omit
+            };
+            logits = self.step(token, &mut state, cancel, mode)?;
         }
         let mut output = Vec::new();
         let mut sum = 0.0;
@@ -665,12 +677,13 @@ impl Model {
             } else if let Some(bytes) = &mut body {
                 bytes.extend(self.tokenizer.token_bytes(id as u32)?);
             }
-            logits = self.step(id as u32, &mut state, cancel)?;
+            logits = self.step(id as u32, &mut state, cancel, StepLogits::Return)?;
         }
         // Include the final selected token in the post-hoc head's context.
+        // That pass updates the cache. Its logits are not sampled.
         if finished {
             if let Some(&last) = output.last() {
-                self.step(last, &mut state, cancel)?;
+                self.step(last, &mut state, cancel, StepLogits::Omit)?;
             }
         }
         let head_score = self
@@ -720,7 +733,7 @@ impl Model {
         self.check_request(&ids, 0, true, 0)?;
         let mut state = self.state(true);
         for id in ids {
-            self.step(id, &mut state, cancel)?;
+            self.step(id, &mut state, cancel, StepLogits::Omit)?;
         }
         let &(code, b) = self
             .heads
@@ -1018,7 +1031,13 @@ impl Model {
         Ok(z.iter().zip(d4).take(x.len()).map(|(v, d)| v * d).collect())
     }
 
-    fn step(&self, token: u32, state: &mut State, cancel: &CancellationToken) -> Result<Vec<f32>> {
+    fn step(
+        &self,
+        token: u32,
+        state: &mut State,
+        cancel: &CancellationToken,
+        logits_mode: StepLogits,
+    ) -> Result<Vec<f32>> {
         check_cancel(cancel)?;
         if state.capture_layers {
             state.layer_means.clear();
@@ -1124,6 +1143,16 @@ impl Model {
         if state.capture_layers {
             state.quantized_hidden.clone_from(&hidden);
         }
+        if logits_mode == StepLogits::Omit {
+            if hidden.iter().any(|value| !value.is_finite()) {
+                return Err(Error::Request("non-finite model output".into()));
+            }
+            check_cancel(cancel)?;
+            if state.collect_cells {
+                state.cells.push(cells);
+            }
+            return Ok(Vec::new());
+        }
         let logits = if g.out_vocab == g.vocab {
             self.gemv(&self.weights[0], &hidden)?
         } else {
@@ -1139,6 +1168,13 @@ impl Model {
         }
         Ok(logits)
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StepLogits {
+    /// Last-token distribution. Prefill and readouts discard every earlier one.
+    Return,
+    Omit,
 }
 
 fn full_projection_indices(g: &Geometry) -> Vec<usize> {

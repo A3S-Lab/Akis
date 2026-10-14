@@ -57,7 +57,8 @@ fn histories_drop_tokens_outside_the_effective_window() {
     let cancel = CancellationToken::new();
     let mut state = m.state(false);
     for token in [2, 4, 5, 4, 6, 4, 5, 4, 6, 4, 5, 4] {
-        m.step(token, &mut state, &cancel).unwrap();
+        m.step(token, &mut state, &cancel, super::StepLogits::Omit)
+            .unwrap();
         for layer in &state.layers {
             assert!(layer.keys.len() <= 3);
             assert!(layer.values.len() <= 3);
@@ -67,6 +68,44 @@ fn histories_drop_tokens_outside_the_effective_window() {
         }
     }
     assert!(state.cells.is_empty());
+}
+
+#[test]
+fn omitted_prefix_logits_keep_the_cache_and_the_last_distribution() {
+    let m = model(InferenceLimits::default());
+    let cancel = CancellationToken::new();
+    let tokens = [2u32, 4, 5, 4];
+    let mut written = m.state(false);
+    let mut last = Vec::new();
+    for &token in &tokens {
+        last = m
+            .step(token, &mut written, &cancel, super::StepLogits::Return)
+            .unwrap();
+    }
+    assert_eq!(last.len(), m.geometry.out_vocab);
+    let mut omitted = m.state(false);
+    for (index, &token) in tokens.iter().enumerate() {
+        let mode = if index + 1 == tokens.len() {
+            super::StepLogits::Return
+        } else {
+            super::StepLogits::Omit
+        };
+        let logits = m.step(token, &mut omitted, &cancel, mode).unwrap();
+        if mode == super::StepLogits::Omit {
+            assert!(logits.is_empty());
+        } else {
+            assert_eq!(logits, last);
+        }
+    }
+    assert_eq!(written.tokens, omitted.tokens);
+    assert_eq!(written.engram_values, omitted.engram_values);
+    for (left, right) in written.layers.iter().zip(&omitted.layers) {
+        assert_eq!(left.keys, right.keys);
+        assert_eq!(left.values, right.values);
+        assert_eq!(left.q, right.q);
+        assert_eq!(left.k, right.k);
+        assert_eq!(left.v, right.v);
+    }
 }
 
 #[test]
