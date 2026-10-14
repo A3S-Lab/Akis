@@ -105,6 +105,7 @@ fn inspect_accepts_paths_with_spaces_and_han_characters() {
     std::fs::write(&spaced_file, &bytes).unwrap();
     std::fs::write(&han_file, &bytes).unwrap();
     let plain_sha = sha256_field(&output(&["inspect", plain.to_str().unwrap()], None));
+    assert_eq!(plain_sha, file_sha256(&bytes));
     for path in [spaced_file, han_file] {
         let result = output(&["inspect", path.to_str().unwrap()], None);
         let stderr = String::from_utf8_lossy(&result.stderr);
@@ -113,6 +114,61 @@ fn inspect_accepts_paths_with_spaces_and_han_characters() {
         assert_eq!(sha256_field(&result), plain_sha);
     }
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn explicit_weights_need_no_home_and_no_writable_directory() {
+    let root = std::env::temp_dir().join(format!("akis-home-{}", std::process::id()));
+    let writable = root.join("src");
+    let work = root.join("work");
+    let home = root.join("home");
+    std::fs::create_dir_all(&writable).unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let bytes = synthetic_fixture::fixture();
+    let model = writable.join("fixture.cact");
+    std::fs::write(&model, &bytes).unwrap();
+    let truncated = writable.join("truncated.cact");
+    std::fs::write(&truncated, &bytes[..bytes.len() - 1]).unwrap();
+    std::fs::set_permissions(&work, std::fs::Permissions::from_mode(0o555)).unwrap();
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let result = Command::new(executable())
+        .args(["inspect", model.to_str().unwrap()])
+        .current_dir(&work)
+        .env("HOME", &home)
+        .env_remove("XDG_CACHE_HOME")
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("A3S_AKIS_SIGNAL_READY_FILE")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(result.status.success(), "{stderr}");
+    assert!(!stderr.contains("panicked"), "{stderr}");
+    assert_eq!(sha256_field(&result), file_sha256(&bytes));
+    assert!(std::fs::read_dir(&work).unwrap().next().is_none());
+    assert!(std::fs::read_dir(&home).unwrap().next().is_none());
+
+    assert_rejected(
+        &output(&["inspect", work.to_str().unwrap()], None),
+        "model must be a regular file",
+    );
+    assert_rejected(
+        &output(&["inspect", truncated.to_str().unwrap()], None),
+        "invalid Needle archive",
+    );
+
+    std::fs::set_permissions(&work, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn file_sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn sha256_field(result: &Output) -> String {

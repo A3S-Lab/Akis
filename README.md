@@ -246,6 +246,13 @@ sha256, and the same input and output sha256. The kitchen head score remains
 0.8660065. The campaign remains 14 passed and 3 failed. A Needle replacement
 is not certified.
 
+The [CLI home checks](docs/evidence/akis/20261014-cli-home/OUTCOME.md) load an
+explicit fixture when HOME and the working directory are read-only. The
+reported sha256 matches an independent digest of the file bytes, and neither
+directory gains a file. A directory path and a truncated file are rejected.
+The campaign remains 14 passed and 3 failed. A Needle replacement is not
+certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 
