@@ -266,6 +266,12 @@ file` and does not panic. The kitchen head score remains 0.8660065. The
 campaign remains 14 passed and 3 failed. A Needle replacement is not
 certified.
 
+The [budget edges](docs/evidence/akis/20261014-power-budgets/OUTCOME.md) accept
+each named Power budget at its exact limit on the synthetic fixture and reject
+one byte or one token past that limit. Production limits are unchanged. The
+campaign remains 14 passed and 3 failed. A Needle replacement is not
+certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

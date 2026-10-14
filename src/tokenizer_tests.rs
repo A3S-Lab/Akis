@@ -110,3 +110,53 @@ fn cancellation_interrupts_symbol_scan_heap_merge_and_output() {
         assert_eq!(calls, stop);
     }
 }
+
+#[test]
+fn tokenizer_bytes_accept_the_exact_limit() {
+    let tok = Tokenizer::from_bytes(&crate::test_support::tokenizer_blob(), 10).unwrap();
+    let cancel = CancellationToken::new();
+    let text = "hi";
+    assert_eq!(text.len(), 2);
+    let input_ok = InferenceLimits {
+        max_input_bytes: text.len(),
+        ..InferenceLimits::default()
+    };
+    assert_eq!(
+        tok.encode_bounded(text, &input_ok, &cancel).unwrap(),
+        tok.encode(text)
+    );
+    let input_over = InferenceLimits {
+        max_input_bytes: text.len() - 1,
+        ..InferenceLimits::default()
+    };
+    let input_error = tok.encode_bounded(text, &input_over, &cancel).unwrap_err();
+    assert!(
+        input_error
+            .to_string()
+            .contains("input byte limit exceeded"),
+        "{input_error}"
+    );
+
+    let symbols = text.len() as u64 + 8;
+    let per_byte =
+        2 * std::mem::size_of::<super::Symbol>() + 6 * std::mem::size_of::<super::Merge>() + 40;
+    let bytes = symbols * per_byte as u64;
+    assert!(bytes > 1 && bytes < InferenceLimits::default().max_state_bytes);
+    let state_ok = InferenceLimits {
+        max_state_bytes: bytes,
+        ..InferenceLimits::default()
+    };
+    assert_eq!(
+        tok.encode_bounded(text, &state_ok, &cancel).unwrap(),
+        tok.encode(text)
+    );
+    let state_over = InferenceLimits {
+        max_state_bytes: bytes - 1,
+        ..InferenceLimits::default()
+    };
+    let state_error = tok.encode_bounded(text, &state_over, &cancel).unwrap_err();
+    assert!(
+        state_error.to_string().contains("tokenizer state"),
+        "{state_error}"
+    );
+}

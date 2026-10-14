@@ -244,6 +244,62 @@ fn tool_metadata_is_bounded_before_schema_cloning() {
     assert_eq!(model.runtime().admission_snapshot().active, 0);
 }
 
+#[test]
+fn tool_request_accepts_the_exact_byte_limit() {
+    let input = "hi";
+    let tool = Tool {
+        name: "example".into(),
+        description: "d".into(),
+        parameters: json!({"type":"object","properties":{}}),
+    };
+    let tools = serde_json::to_vec(std::slice::from_ref(&tool)).unwrap();
+    let overhead = "<|im_start|>user\n<tools></tools>\n<|im_end|>\n<|im_start|>assistant\n".len();
+    let exact = input.len() + overhead + tools.len();
+    assert!(exact > input.len());
+    // The stock fixture context is shorter than this chat wrapper. Widen only
+    // that field so the exact byte budget reaches generation. One token does
+    // not finish a tool call on this fixture.
+    let mut fixture = crate::test_support::fixture();
+    fixture[13 * 4..14 * 4].copy_from_slice(&512u32.to_le_bytes());
+    let limits = crate::InferenceLimits {
+        max_input_bytes: exact,
+        ..crate::InferenceLimits::default()
+    };
+    let model = Model::load(
+        crate::Archive::from_bytes(fixture.clone(), &limits).unwrap(),
+        crate::EmbeddedRuntime::new(crate::DevicePreference::Cpu, limits).unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    let admitted = model
+        .complete(input, std::slice::from_ref(&tool), 1, &cancel)
+        .unwrap_err();
+    assert!(
+        admitted
+            .to_string()
+            .contains("generation exhausted before a complete tool call"),
+        "{admitted}"
+    );
+    assert_eq!(model.runtime().admission_snapshot().active, 0);
+    let tight = crate::InferenceLimits {
+        max_input_bytes: exact - 1,
+        ..crate::InferenceLimits::default()
+    };
+    let rejected = Model::load(
+        crate::Archive::from_bytes(fixture, &tight).unwrap(),
+        crate::EmbeddedRuntime::new(crate::DevicePreference::Cpu, tight).unwrap(),
+    )
+    .unwrap();
+    let error = rejected.complete(input, &[tool], 1, &cancel).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("tool request byte limit exceeded"),
+        "{error}"
+    );
+    assert_eq!(rejected.runtime().admission_snapshot().active, 0);
+}
+
 fn lights(room: &str, on: bool) -> ToolCall {
     ToolCall {
         name: "set_lights".into(),

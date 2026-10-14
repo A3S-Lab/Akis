@@ -667,6 +667,364 @@ fn context_length_and_generation_bound_fail_closed() {
     assert!(step_over.to_string().contains(limit), "{step_over}");
 }
 
+fn load_fixture(limits: InferenceLimits) -> Result<Model> {
+    let archive = Archive::from_bytes(crate::test_support::fixture(), &limits)?;
+    Model::load(
+        archive,
+        EmbeddedRuntime::new(DevicePreference::Cpu, limits)?,
+    )
+}
+
+fn resident_weight_bytes(archive: &Archive) -> u64 {
+    let geometry = archive.geometry();
+    let stride = if geometry.conv_taps > 0 { 27 } else { 24 };
+    let engrams = 1 + stride * geometry.layers + 11;
+    let gather: Vec<usize> = (0..geometry.engram_sites.len())
+        .map(|site| engrams + 4 * site)
+        .collect();
+    archive.records[..archive.records.len() - 1]
+        .iter()
+        .enumerate()
+        .map(|(index, record)| {
+            if record.dtype == 3 && gather.contains(&index) {
+                record.bytes as u64
+            } else {
+                record
+                    .shape
+                    .iter()
+                    .try_fold(1u64, |product, &dimension| {
+                        product.checked_mul(dimension as u64)
+                    })
+                    .unwrap()
+                    .checked_mul(4)
+                    .unwrap()
+            }
+        })
+        .sum()
+}
+
+fn largest_tensor_elements(archive: &Archive) -> usize {
+    archive
+        .records
+        .iter()
+        .filter(|record| record.dtype != 4)
+        .map(|record| record.shape.iter().product::<usize>())
+        .max()
+        .unwrap()
+}
+
+/// Same products `check_request` adds. The comparisons below fail when a term
+/// or the `>` boundary moves.
+fn reserved_state_bytes(
+    model: &Model,
+    token_count: usize,
+    additional: usize,
+    collect_cells: bool,
+) -> u64 {
+    let geometry = model.geometry();
+    let total = token_count + additional;
+    let vector = std::mem::size_of::<Vec<f32>>();
+    let mut bytes = 0u64;
+    add_factors(&mut bytes, &[2, total, 4]);
+    add_factors(&mut bytes, &[2, token_count, 4]);
+    add_factors(
+        &mut bytes,
+        &[
+            2,
+            geometry.layers + 4,
+            std::mem::size_of::<super::LayerState>(),
+        ],
+    );
+    for layer in 0..geometry.layers {
+        let conv = total.min(geometry.conv_taps.max(1));
+        let window = model.attention_window(layer, total);
+        for (count, width) in [
+            (conv, geometry.heads * geometry.qk_dim),
+            (conv, geometry.kv_heads * geometry.qk_dim),
+            (conv, geometry.kv_heads * geometry.v_dim),
+            (window, geometry.kv_heads * geometry.qk_dim),
+            (window, geometry.kv_heads * geometry.v_dim),
+        ] {
+            add_factors(&mut bytes, &[2, count, width, 4]);
+            add_factors(&mut bytes, &[2, count + 4, vector]);
+        }
+    }
+    if !geometry.engram_sites.is_empty() {
+        let history = total.min(1 + (geometry.engram_taps - 1) * geometry.engram_dilation);
+        add_factors(
+            &mut bytes,
+            &[2, geometry.engram_sites.len(), history, geometry.width, 4],
+        );
+        add_factors(
+            &mut bytes,
+            &[2, geometry.engram_sites.len(), history + 4, vector],
+        );
+    }
+    if collect_cells {
+        add_factors(
+            &mut bytes,
+            &[2, total, geometry.layers + 1, geometry.width, 4],
+        );
+        add_factors(&mut bytes, &[2, total + 4, vector]);
+        let mut largest = 0u64;
+        for &(_, base) in &model.heads {
+            let rows = geometry.layers + 1;
+            let k = model.weights[base + 1].dims()[1];
+            let q = model.weights[base + 2].dims()[0];
+            let mut head = 0u64;
+            add_factors(&mut head, &[2, rows, k, geometry.width, 4]);
+            add_factors(&mut head, &[2, rows * k + 4, vector]);
+            add_factors(&mut head, &[2, rows, k, 4]);
+            add_factors(&mut head, &[2, q, rows, k, 4]);
+            add_factors(&mut head, &[2, q + 4, geometry.width, 4]);
+            add_factors(&mut head, &[4, model.weights[base + 4].dims()[0], 4]);
+            add_factors(&mut head, &[2, total + rows * k + 8, 4]);
+            largest = largest.max(head);
+        }
+        bytes = bytes.checked_add(largest).unwrap();
+    }
+    for elements in [
+        geometry.width * (8 * geometry.lanes + 32),
+        32 * geometry.hadamard,
+        8 * geometry.lanes * geometry.lanes,
+        8 * geometry.heads * (geometry.qk_dim + geometry.v_dim),
+        8 * geometry.kv_heads * (geometry.qk_dim + geometry.v_dim),
+        4 * geometry.out_vocab,
+        4 * geometry.engram_tables * geometry.engram_dim,
+        3 * geometry.layers,
+        geometry.conv_taps
+            * ((geometry.heads + geometry.kv_heads) * geometry.qk_dim
+                + geometry.kv_heads * geometry.v_dim),
+        geometry.engram_taps * geometry.width,
+    ] {
+        add_factors(&mut bytes, &[elements, 4]);
+    }
+    add_factors(
+        &mut bytes,
+        &[16, additional, model.tokenizer.max_token_bytes()],
+    );
+    bytes
+}
+
+fn add_factors(bytes: &mut u64, factors: &[usize]) {
+    super::add_bytes(bytes, factors).unwrap();
+}
+
+fn must_err<T>(result: Result<T>) -> Error {
+    match result {
+        Ok(_) => panic!("expected the budget to reject"),
+        Err(error) => error,
+    }
+}
+
+struct RemoveDir(std::path::PathBuf);
+impl Drop for RemoveDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+fn power_budgets_accept_the_exact_limit_and_reject_one_past() {
+    let cancel = CancellationToken::new();
+    let bytes = crate::test_support::fixture();
+    let defaults = InferenceLimits::default();
+    let archive = Archive::from_bytes(bytes.clone(), &defaults).unwrap();
+    assert!(archive.records.len() > 1);
+
+    let file_limit = InferenceLimits {
+        max_model_bytes: bytes.len() as u64,
+        ..InferenceLimits::default()
+    };
+    let parsed = Archive::from_bytes(bytes.clone(), &file_limit).unwrap();
+    let directory = std::env::temp_dir().join(format!("akis-pwr04-{}", std::process::id()));
+    let _remove = RemoveDir(directory.clone());
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("fixture.cact");
+    std::fs::write(&path, &bytes).unwrap();
+    let opened = Archive::open(&path, &file_limit).unwrap();
+    assert_eq!(opened.sha256(), parsed.sha256());
+    let short_file = InferenceLimits {
+        max_model_bytes: bytes.len() as u64 - 1,
+        ..InferenceLimits::default()
+    };
+    let open_error = must_err(Archive::open(&path, &short_file));
+    assert!(
+        open_error.to_string().contains("model byte limit exceeded"),
+        "{open_error}"
+    );
+    let parse_error = must_err(Archive::from_bytes(bytes.clone(), &short_file));
+    assert!(
+        parse_error.to_string().contains("invalid model length"),
+        "{parse_error}"
+    );
+
+    let resident = resident_weight_bytes(&archive);
+    assert!(resident > 1 && resident < defaults.max_resident_weight_bytes);
+    load_fixture(InferenceLimits {
+        max_resident_weight_bytes: resident,
+        ..InferenceLimits::default()
+    })
+    .unwrap();
+    let resident_error = must_err(load_fixture(InferenceLimits {
+        max_resident_weight_bytes: resident - 1,
+        ..InferenceLimits::default()
+    }));
+    assert!(
+        resident_error
+            .to_string()
+            .contains("resident weights exceed"),
+        "{resident_error}"
+    );
+
+    let largest = largest_tensor_elements(&archive);
+    assert!(largest > 1 && largest < defaults.max_tensor_elements);
+    load_fixture(InferenceLimits {
+        max_tensor_elements: largest,
+        ..InferenceLimits::default()
+    })
+    .unwrap();
+    let tensor_error = must_err(load_fixture(InferenceLimits {
+        max_tensor_elements: largest - 1,
+        ..InferenceLimits::default()
+    }));
+    assert!(
+        tensor_error.to_string().contains("element limit"),
+        "{tensor_error}"
+    );
+
+    let probe = model(InferenceLimits::default());
+    let vocab = probe.geometry().vocab;
+    assert!(vocab > 1);
+    let edge = probe.logits(&[(vocab - 1) as u32], &cancel).unwrap();
+    assert_eq!(edge.len(), probe.geometry().out_vocab);
+    assert!(edge.iter().all(|value| value.is_finite()));
+    let id_error = probe.logits(&[vocab as u32], &cancel).unwrap_err();
+    assert!(
+        id_error
+            .to_string()
+            .contains("token or context limit exceeded"),
+        "{id_error}"
+    );
+
+    let context_cap = 4;
+    assert!(probe.geometry().context > context_cap + 1);
+    let context_limited = model(InferenceLimits {
+        max_context_tokens: context_cap,
+        ..InferenceLimits::default()
+    });
+    let inside = context_limited
+        .logits(&vec![2; context_cap], &cancel)
+        .unwrap();
+    assert_eq!(inside.len(), context_limited.geometry().out_vocab);
+    assert!(inside.iter().all(|value| value.is_finite()));
+    let context_error = context_limited
+        .logits(&vec![2; context_cap + 1], &cancel)
+        .unwrap_err();
+    assert!(
+        context_error
+            .to_string()
+            .contains("token or context limit exceeded"),
+        "{context_error}"
+    );
+    assert_eq!(context_limited.runtime.admission_snapshot().active, 0);
+
+    let generation_cap = 4;
+    let generation_limited = model(InferenceLimits {
+        max_generated_tokens: generation_cap,
+        ..InferenceLimits::default()
+    });
+    let generated = generation_limited
+        .generate("hi", generation_cap, &cancel)
+        .unwrap();
+    assert!(!generated.token_ids.is_empty());
+    assert!(generated.token_ids.len() <= generation_cap);
+    let generation_error = generation_limited
+        .generate("hi", generation_cap + 1, &cancel)
+        .unwrap_err();
+    assert!(
+        generation_error
+            .to_string()
+            .contains("token or context limit exceeded"),
+        "{generation_error}"
+    );
+    assert_eq!(generation_limited.runtime.admission_snapshot().active, 0);
+
+    let prompt = "hi";
+    let longer = "hih";
+    assert_eq!(longer.len(), prompt.len() + 1);
+    let input_limited = model(InferenceLimits {
+        max_input_bytes: prompt.len(),
+        ..InferenceLimits::default()
+    });
+    assert!(input_limited.generate(prompt, 1, &cancel).is_ok());
+    let prompt_error = input_limited.generate(longer, 1, &cancel).unwrap_err();
+    assert!(
+        prompt_error
+            .to_string()
+            .contains("invalid prompt or generation bound"),
+        "{prompt_error}"
+    );
+    let embed_error = input_limited.embed(longer, &cancel).unwrap_err();
+    assert!(
+        embed_error
+            .to_string()
+            .contains("input byte limit exceeded"),
+        "{embed_error}"
+    );
+    let embed_edge = input_limited.embed(prompt, &cancel).unwrap_err();
+    assert!(
+        embed_edge
+            .to_string()
+            .contains("no embedding or confidence probe"),
+        "{embed_edge}"
+    );
+    assert_eq!(input_limited.runtime.admission_snapshot().active, 0);
+
+    let tokens = vec![2u32; 4];
+    let exact = reserved_state_bytes(&probe, tokens.len(), 0, false);
+    let with_cells = reserved_state_bytes(&probe, tokens.len(), 0, true);
+    assert!(with_cells > exact && exact < defaults.max_state_bytes);
+    let admitted = load_fixture(InferenceLimits {
+        max_state_bytes: exact,
+        ..InferenceLimits::default()
+    })
+    .unwrap();
+    let logits = admitted.logits(&tokens, &cancel).unwrap();
+    assert_eq!(logits.len(), admitted.geometry().out_vocab);
+    assert!(logits.iter().all(|value| value.is_finite()));
+    assert_eq!(admitted.runtime.admission_snapshot().active, 0);
+    let state_error = load_fixture(InferenceLimits {
+        max_state_bytes: exact - 1,
+        ..InferenceLimits::default()
+    })
+    .unwrap()
+    .logits(&tokens, &cancel)
+    .unwrap_err();
+    assert!(
+        state_error.to_string().contains("Needle reference state"),
+        "{state_error}"
+    );
+
+    let cells = load_fixture(InferenceLimits {
+        max_state_bytes: with_cells,
+        ..InferenceLimits::default()
+    })
+    .unwrap();
+    cells.check_request(&tokens, 0, true, 0).unwrap();
+    let cell_error = load_fixture(InferenceLimits {
+        max_state_bytes: with_cells - 1,
+        ..InferenceLimits::default()
+    })
+    .unwrap()
+    .check_request(&tokens, 0, true, 0)
+    .unwrap_err();
+    assert!(
+        cell_error.to_string().contains("Needle reference state"),
+        "{cell_error}"
+    );
+}
+
 #[test]
 fn kron_matches_the_scalar_triple_loop_on_every_lane() {
     for (na, nb) in [
