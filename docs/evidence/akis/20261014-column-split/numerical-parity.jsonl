@@ -1,0 +1,32 @@
+{"case": "hello", "cosine": 0.9999836087226868, "max_absolute_error": 0.25055742263793945, "top1_agreement": true, "reference_top": 8110, "akis_top": 8110, "tokens": 3}
+{"case": "zh-lights", "cosine": 0.9999939203262329, "max_absolute_error": 0.1409893035888672, "top1_agreement": true, "reference_top": 257, "akis_top": 257, "tokens": 31}
+{"case": "tool-prompt", "cosine": 0.9999984502792358, "max_absolute_error": 0.39546966552734375, "top1_agreement": true, "reference_top": 6, "akis_top": 6, "tokens": 59}
+{"case": "layer-00", "cosine": 0.9999999403953552, "max_absolute_error": 0.0029296875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-01", "cosine": 1.0000001192092896, "max_absolute_error": 0.001953125, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-02", "cosine": 0.9999998211860657, "max_absolute_error": 0.0029296875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-03", "cosine": 1.0000001192092896, "max_absolute_error": 0.001953125, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-04", "cosine": 1.0, "max_absolute_error": 0.009765625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-05", "cosine": 0.9999997615814209, "max_absolute_error": 2.2900238037109375, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-06", "cosine": 0.9999964833259583, "max_absolute_error": 7.884552001953125, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-07", "cosine": 0.9999948740005493, "max_absolute_error": 10.19921875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-08", "cosine": 0.9999921321868896, "max_absolute_error": 17.443359375, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-09", "cosine": 0.999981164932251, "max_absolute_error": 22.5078125, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-10", "cosine": 0.9999774694442749, "max_absolute_error": 27.927108764648438, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-11", "cosine": 0.9999626874923706, "max_absolute_error": 30.88433837890625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-12", "cosine": 0.999952495098114, "max_absolute_error": 34.714508056640625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-13", "cosine": 0.9999336004257202, "max_absolute_error": 36.46922302246094, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-14", "cosine": 0.9998608827590942, "max_absolute_error": 52.463623046875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-15", "cosine": 0.9998592138290405, "max_absolute_error": 73.244384765625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-16", "cosine": 0.9998396635055542, "max_absolute_error": 79.970947265625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-17", "cosine": 0.9998188614845276, "max_absolute_error": 115.10546875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-18", "cosine": 0.9997951984405518, "max_absolute_error": 109.95608520507812, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-19", "cosine": 0.9999998211860657, "max_absolute_error": 171382.0, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "quantization-activation", "cosine": 0.9992748498916626, "max_absolute_error": 0.0002685515210032463, "top1_agreement": true, "reference_top": 246, "akis_top": 246, "tokens": 3}
+{"case": "quantization-logits", "cosine": 1.0, "max_absolute_error": 1.9073486328125e-05, "top1_agreement": true, "reference_top": 8099, "akis_top": 8099, "tokens": 2, "float_path_max_absolute_error": 0.2731361389160156, "float_path_top1_agreement": true}
+{"case": "confidence-pool-embedding", "cosine": 0.9999165534973145, "max_absolute_error": 0.0026654601097106934, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "dimensions": 3072}
+{"case": "confidence-head", "reference": 0.24422524869441986, "akis": 0.24352913, "absolute_error": 0.0006961186944198505, "top1_agreement": true}
+{"case": "long-1280-think", "cosine": 0.9999985098838806, "max_absolute_error": 0.29025840759277344, "top1_agreement": true, "reference_top": 38, "akis_top": 38, "tokens": 1280}
+{"case": "long-1536-tool-call", "cosine": 0.9999951720237732, "max_absolute_error": 0.486083984375, "top1_agreement": true, "reference_top": 10, "akis_top": 10, "tokens": 1536}
+{"case": "long-2048-user", "cosine": 0.9999986886978149, "max_absolute_error": 0.23699951171875, "top1_agreement": true, "reference_top": 410, "akis_top": 410, "tokens": 2048, "maximum_resident_bytes": 274825216, "seconds": 32.02026183396811, "retained_1025_token_peak_rss_bytes": 536035328}
+{"case": "budget-1025-think", "cosine": 0.9999988079071045, "max_absolute_error": 0.427978515625, "top1_agreement": true, "reference_top": 38, "akis_top": 38, "tokens": 1025, "maximum_resident_bytes": 274464768, "seconds": 15.206017666961998, "retained_1025_token_peak_rss_bytes": 536035328}
+{"passed": 31}

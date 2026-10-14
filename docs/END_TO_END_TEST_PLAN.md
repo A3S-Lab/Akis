@@ -267,6 +267,9 @@ hello 与 256-token logits 相对上一版的最大绝对误差为 0。余弦仍
 随后的分配图覆盖 `step`、`attention`、`mlp`、`kron` 和 gemv 上每个 token 重建的向量。
 同一二进制上对 1025-token logits 采样 4 秒，`logits` 3114 次，`flat` 51 次，`to_vec1` 52 次。
 秩 1 缩放没有越过缓存线，所以没有第二份拷贝。`gemm_basic` 是栈顶最多的叶子，1781 次。
+随后的列拆分试验把较宽的连续乘积按输出列切开，每段仍走同一次连续乘积。
+hello 与 256-token logits 相对保留二进制的最大绝对误差为 0。
+同一入口的冷进程从 6.762 秒、13.200 秒变成 15.206 秒、32.020 秒，所以这次拆分没有保留。
 最大上下文、第二层深、packed GEMM 和跨平台仍未证明。这不是 G1 或 G4 完成，也不是 Needle 替换认证。
 Unix CLI 已把 `SIGINT` 与 `SIGTERM` 接到进程取消标志。第一次信号请求取消，
 第二次相同信号恢复默认终止。`A3S_AKIS_SIGNAL_READY_FILE` 只是进程测试的同步屏障，

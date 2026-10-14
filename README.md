@@ -133,6 +133,11 @@ lists the vectors rebuilt on each token. A 4-second sample puts `flat` and
 `to_vec1` under the cache bar, so no second copy was added. `gemm_basic`
 remains the top leaf. Packed CQ GEMM and a Needle replacement are not
 certified.
+The [column-split trial](docs/evidence/akis/20261014-column-split/OUTCOME.md)
+split wide products across columns. Hello and the 256-token logits matched
+the kept binary with max absolute error 0. The cold 2048-token sample moved
+from 13.200 seconds to 32.020 seconds, so the split was not kept. Packed CQ
+GEMM and a Needle replacement are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
