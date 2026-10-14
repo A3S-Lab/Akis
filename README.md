@@ -354,6 +354,11 @@ embed one finite value from a code-1 probe. A finite embedding of 1 with a
 finite but overflowing direction is rejected. The campaign remains 14 passed
 and 3 failed. A Needle replacement is not certified.
 
+The [confidence head checks](docs/evidence/akis/20261015-confidence-head/OUTCOME.md)
+return one finite score from a code-2 probe. A finite embedding of 1, a finite
+gain of 1, and a finite but overflowing projection are rejected. The campaign
+remains 14 passed and 3 failed. A Needle replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

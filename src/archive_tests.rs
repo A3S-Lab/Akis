@@ -1106,3 +1106,45 @@ fn embedding_probe_accepts_a_finite_vector_and_rejects_a_non_finite_one() {
         }
     }
 }
+
+#[test]
+fn confidence_head_accepts_a_finite_score_and_rejects_an_overflow() {
+    let mut finite = parse_archive(fixture()).unwrap();
+    push_probe(&mut finite, 2.0, 2, 1);
+    let model = load_cpu(finite).unwrap();
+    match model.generate("hi", 1, &crate::CancellationToken::new()) {
+        Ok(generation) => {
+            let score = generation.head_score.expect("code-2 head");
+            assert!(score.is_finite(), "{score}");
+        }
+        Err(error) => panic!("finite confidence head rejected: {error}"),
+    }
+
+    let mut huge = parse_archive(fixture()).unwrap();
+    push_probe(&mut huge, 2.0, 2, 1);
+    let len = huge.records.len();
+    let gain = len - 6;
+    let projection = len - 3;
+    assert_eq!(huge.records[0].shape, [10, 2]);
+    assert_eq!(huge.records[gain].shape, [2, 1]);
+    assert_eq!(huge.records[projection].shape, [1, 2]);
+    assert_eq!(huge.records[len - 8].shape, [1]);
+    fill_f32(&mut huge, 0, 1.0);
+    fill_f32(&mut huge, gain, 1.0);
+    fill_f32(&mut huge, projection, f32::MAX);
+    let model = load_cpu(huge).unwrap();
+    match model.generate("hi", 1, &crate::CancellationToken::new()) {
+        Ok(generation) => panic!(
+            "overflowing confidence head returned {:?}",
+            generation.head_score
+        ),
+        Err(error) => {
+            let text = error.to_string();
+            println!("observed rejection: {text}");
+            assert!(text.contains("non-finite confidence head"), "{text}");
+            assert!(!text.contains("non-finite probe output"), "{text}");
+            assert!(!text.contains("non-finite model output"), "{text}");
+            assert!(!text.contains("non-finite tensor"), "{text}");
+        }
+    }
+}
