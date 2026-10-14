@@ -314,6 +314,15 @@ count 4 and site count 16 open. One past those counts is rejected. The
 campaign remains 14 passed and 3 failed. A Needle replacement is not
 certified.
 
+The [tensor record checks](docs/evidence/akis/20261014-tensor-records/OUTCOME.md)
+accept a stored F32 length, and four dimensions when that product still
+matches. An unknown dtype, five dimensions, a reserved byte, an empty shape,
+an unsupported CQ width, a second raw record, and a range that is empty,
+unaligned, overlapping, or past the file are rejected. One byte less on the
+trailing tokenizer still parses the directory and then fails the tokenizer.
+The campaign remains 14 passed and 3 failed. A Needle replacement is not
+certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

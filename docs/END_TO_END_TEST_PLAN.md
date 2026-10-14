@@ -367,6 +367,8 @@ hello、256-token `<think>` 和 2048-token `user` 的 logits 相对上一版最�
 
 随后，合成工件的几何字段在精确上限上可以打开，多一档就被拒绝。层数 64 打开、65 拒绝。头数、lane、卷积 tap，以及 engram 的 table、tap、dilation、seed 都是 256 打开、257 拒绝。vocab、宽度、qk、value、上下文、Hadamard、engram slots 和 engram dim 的上限是 1048576，再加一就被拒绝。必填维度为 0、qk 不是偶数、Hadamard 小于宽度或不是 2 的幂、rope theta 不是有限正数、输出词表大于词表、engram 位点越过最后一层或没有严格递增，错误都是 `invalid model geometry`。engram 的 order 个数 4 和位点个数 16 可以打开。order 个数 5 和位点个数 17 的错误是 `invalid engram counts`。位点已经存在时，order 为 0、slots 为 0，或 table 个数不是 order 个数的倍数，错误是 `invalid engram geometry`。没有位点时，order 为 0 仍可打开。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。58 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
 
+随后，合成工件的张量记录在存储长度匹配时可以打开。四维形状的乘积仍等于这条 F32 的字节数时也可以打开。dtype 为 0、5 或 255、五维，以及保留字节不为 0，错误是 `invalid tensor record`。这条 F32 少一个字节或多一个字节，错误是 `tensor 0 byte length mismatch`。空形状、含 0 的维度，以及乘积超出地址空间，都在长度检查之前被拒绝。CQ 的 group 不是 128，或 bits 不在 1 到 5，错误是 `unsupported CQ geometry`。group 为 128 且 bits 为 1 或 5 时，这条存储长度不匹配，错误是字节长度不符。第二条 RAW 记录，或把末尾记录改成等长的 F32，错误是 `expected one trailing tokenizer`。长度为 0、偏移未按 64 对齐、偏移落在目录里、范围越过文件末尾，以及末尾 RAW 再多一个字节，错误是 `invalid or overlapping tensor range`。第一条记录的长度越过可表示的地址，错误是 `tensor range overflow`。末尾 RAW 少一个字节时目录仍能打开，随后分词解析失败，错误含有 `malformed SentencePiece`。目录声明 1000 条记录时，错误是 `truncated directory`。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。59 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
+
 ## 10. 扩展轨道的额外出口
 
 - **训练/量化/导出**：固定 seed 的小数据训练、loss 与 held-out 质量、训练→导出→

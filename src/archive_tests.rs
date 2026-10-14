@@ -369,3 +369,204 @@ fn geometry_edges_accept_the_limit_and_reject_one_past_it() {
         2
     );
 }
+
+fn record_slot(index: usize) -> usize {
+    HEADER + 28 * 4 + index * RECORD
+}
+
+fn put_u32(bytes: &mut [u8], at: usize, value: u32) {
+    bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn put_u64(bytes: &mut [u8], at: usize, value: u64) {
+    bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+fn parse_archive(bytes: Vec<u8>) -> Result<Archive> {
+    Archive::from_bytes(bytes, &InferenceLimits::default())
+}
+
+fn reject_record(bytes: Vec<u8>, message: &str) {
+    match parse_archive(bytes) {
+        Ok(_) => panic!("archive opened, expected {message}"),
+        Err(error) => assert!(error.to_string().contains(message), "{error}"),
+    }
+}
+
+fn reject_record_without(bytes: Vec<u8>, message: &str, absent: &str) {
+    match parse_archive(bytes) {
+        Ok(_) => panic!("archive opened, expected {message}"),
+        Err(error) => {
+            let text = error.to_string();
+            assert!(text.contains(message), "{text}");
+            assert!(!text.contains(absent), "{text}");
+        }
+    }
+}
+
+#[test]
+fn tensor_records_accept_a_matching_length_and_reject_one_bad_field() {
+    let bytes = fixture();
+    let stock = parse_archive(bytes.clone()).unwrap();
+    assert!(stock.records.len() > 1);
+    let first = &stock.records[0];
+    let last_index = stock.records.len() - 1;
+    let last = &stock.records[last_index];
+    assert_eq!(first.dtype, 2);
+    assert_eq!(first.shape, [10, 2]);
+    assert_eq!(first.offset % 64, 0);
+    assert!(first.bytes > 1);
+    assert!(first.offset + first.bytes < bytes.len());
+    assert_eq!(last.dtype, 4);
+    assert!(last.shape.is_empty());
+    assert_eq!(last.offset + last.bytes, bytes.len());
+    assert!(stock.records[..last_index]
+        .iter()
+        .all(|record| record.dtype != 4));
+    let slot = record_slot(0);
+    let last_slot = record_slot(last_index);
+    let invalid = "invalid tensor record";
+    let mismatch = "tensor 0 byte length mismatch";
+    let range = "invalid or overlapping tensor range";
+
+    for dtype in [0_u8, 5, 255] {
+        let mut bad = bytes.clone();
+        bad[slot] = dtype;
+        reject_record(bad, invalid);
+    }
+    let mut half = bytes.clone();
+    half[slot] = 1;
+    reject_record_without(half, mismatch, invalid);
+
+    let mut wide = bytes.clone();
+    wide[slot + 1] = 5;
+    reject_record(wide, invalid);
+    let mut reserved = bytes.clone();
+    reserved[slot + 2] = 1;
+    reject_record(reserved, invalid);
+
+    let mut four = bytes.clone();
+    four[slot + 1] = 4;
+    put_u32(&mut four, slot + 12, 1);
+    put_u32(&mut four, slot + 16, 1);
+    let opened = parse_archive(four).unwrap();
+    assert_eq!(opened.records[0].dtype, 2);
+    assert_eq!(opened.records[0].shape, [10, 2, 1, 1]);
+    assert_eq!(opened.records[0].bytes, first.bytes);
+
+    let mut four_long = bytes.clone();
+    four_long[slot + 1] = 4;
+    put_u32(&mut four_long, slot + 12, 1);
+    put_u32(&mut four_long, slot + 16, 2);
+    reject_record_without(four_long, mismatch, invalid);
+
+    let mut empty = bytes.clone();
+    empty[slot + 1] = 0;
+    reject_record_without(empty, "positive dimensions", invalid);
+    let mut zero_axis = bytes.clone();
+    zero_axis[slot + 1] = 3;
+    reject_record_without(zero_axis, "positive dimensions", "byte length mismatch");
+
+    let mut huge = bytes.clone();
+    huge[slot + 1] = 3;
+    put_u32(&mut huge, slot + 4, u32::MAX);
+    put_u32(&mut huge, slot + 8, u32::MAX);
+    put_u32(&mut huge, slot + 12, 2);
+    reject_record_without(huge, "dimensions overflowed", "byte length mismatch");
+
+    let cq = "unsupported CQ geometry";
+    let mut cq_stock = bytes.clone();
+    cq_stock[slot] = 3;
+    reject_record_without(cq_stock, cq, invalid);
+    let mut cq_bits = bytes.clone();
+    cq_bits[slot] = 3;
+    put_u32(&mut cq_bits, slot + 36, 128);
+    put_u32(&mut cq_bits, slot + 40, 6);
+    reject_record(cq_bits, cq);
+    let mut cq_rank = bytes.clone();
+    cq_rank[slot] = 3;
+    cq_rank[slot + 1] = 1;
+    put_u32(&mut cq_rank, slot + 36, 128);
+    put_u32(&mut cq_rank, slot + 40, 1);
+    reject_record(cq_rank, cq);
+    for bits in [1_u32, 5] {
+        let mut cq_len = bytes.clone();
+        cq_len[slot] = 3;
+        put_u32(&mut cq_len, slot + 36, 128);
+        put_u32(&mut cq_len, slot + 40, bits);
+        reject_record_without(cq_len, mismatch, cq);
+    }
+
+    let mut raw_matrix = bytes.clone();
+    raw_matrix[slot] = 4;
+    reject_record(raw_matrix, "RAW attachment must be scalar");
+    let mut second_raw = bytes.clone();
+    second_raw[slot] = 4;
+    second_raw[slot + 1] = 0;
+    reject_record(second_raw, "expected one trailing tokenizer");
+    assert_eq!(last.bytes % 4, 0);
+    let mut numeric_tail = bytes.clone();
+    numeric_tail[last_slot] = 2;
+    numeric_tail[last_slot + 1] = 1;
+    put_u32(
+        &mut numeric_tail,
+        last_slot + 4,
+        u32::try_from(last.bytes / 4).unwrap(),
+    );
+    reject_record(numeric_tail, "expected one trailing tokenizer");
+
+    let mut short = bytes.clone();
+    put_u64(&mut short, slot + 28, (first.bytes - 1) as u64);
+    reject_record_without(short, mismatch, "overlapping");
+    let mut long = bytes.clone();
+    put_u64(&mut long, slot + 28, (first.bytes + 1) as u64);
+    reject_record_without(long, mismatch, "overlapping");
+    let mut zero_len = bytes.clone();
+    put_u64(&mut zero_len, slot + 28, 0);
+    reject_record_without(zero_len, range, "byte length mismatch");
+    let mut unaligned = bytes.clone();
+    put_u64(&mut unaligned, slot + 20, (first.offset + 1) as u64);
+    reject_record_without(unaligned, range, "byte length mismatch");
+    let mut inside = bytes.clone();
+    put_u64(&mut inside, slot + 20, 0);
+    reject_record_without(inside, range, "byte length mismatch");
+    let mut past = bytes.clone();
+    put_u64(
+        &mut past,
+        slot + 28,
+        (bytes.len() - first.offset + 1) as u64,
+    );
+    reject_record_without(past, range, "byte length mismatch");
+    let mut tail_past = bytes.clone();
+    put_u64(&mut tail_past, last_slot + 28, (last.bytes + 1) as u64);
+    reject_record_without(tail_past, range, "byte length mismatch");
+    let mut overflow = bytes.clone();
+    put_u64(
+        &mut overflow,
+        slot + 28,
+        u64::try_from(usize::MAX - first.offset).unwrap() + 1,
+    );
+    reject_record_without(overflow, "tensor range overflow", "overlapping");
+
+    let mut tail_short = bytes.clone();
+    put_u64(&mut tail_short, last_slot + 28, (last.bytes - 1) as u64);
+    let shortened = parse_archive(tail_short).unwrap();
+    assert_eq!(shortened.records[last_index].dtype, 4);
+    assert_eq!(shortened.records[last_index].bytes, last.bytes - 1);
+    assert!(shortened.records[..last_index]
+        .iter()
+        .all(|record| record.dtype != 4));
+    match shortened.tokenizer() {
+        Ok(_) => panic!("truncated tokenizer parsed"),
+        Err(error) => assert!(
+            error.to_string().contains("malformed SentencePiece"),
+            "{error}"
+        ),
+    }
+
+    let directory = HEADER + 28 * 4;
+    assert!(directory + 1_000 * RECORD > bytes.len());
+    let mut truncated = bytes;
+    put_u32(&mut truncated, 4, 1_000);
+    reject_record_without(truncated, "truncated directory", invalid);
+}
