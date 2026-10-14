@@ -570,3 +570,309 @@ fn tensor_records_accept_a_matching_length_and_reject_one_bad_field() {
     put_u32(&mut truncated, 4, 1_000);
     reject_record_without(truncated, "truncated directory", invalid);
 }
+
+fn load_cpu(archive: Archive) -> Result<crate::Model> {
+    crate::Model::load(
+        archive,
+        crate::EmbeddedRuntime::new(crate::DevicePreference::Cpu, InferenceLimits::default())
+            .unwrap(),
+    )
+}
+
+fn reject_load(archive: Archive, message: &str) {
+    match load_cpu(archive) {
+        Ok(_) => panic!("model loaded, expected {message}"),
+        Err(error) => assert!(error.to_string().contains(message), "{error}"),
+    }
+}
+
+fn reject_load_without(archive: Archive, message: &str, absent: &str) {
+    match load_cpu(archive) {
+        Ok(_) => panic!("model loaded, expected {message}"),
+        Err(error) => {
+            let text = error.to_string();
+            assert!(text.contains(message), "{text}");
+            assert!(!text.contains(absent), "{text}");
+        }
+    }
+}
+
+fn permutation_offsets(archive: &Archive) -> Vec<usize> {
+    archive
+        .records
+        .iter()
+        .filter(|record| record.dtype == 2 && record.shape == [2] && record.bytes == 8)
+        .filter(|record| {
+            let data = &archive.data[record.offset..record.offset + 8];
+            f32::from_le_bytes(data[0..4].try_into().unwrap()) == 0.0
+                && f32::from_le_bytes(data[4..8].try_into().unwrap()) == 1.0
+        })
+        .map(|record| record.offset)
+        .collect()
+}
+
+fn write_f32s(bytes: &mut [u8], offset: usize, values: &[f32]) {
+    for (index, value) in values.iter().enumerate() {
+        let at = offset + index * 4;
+        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn cq_payload(stored_bits: usize, norm: f32, crumb: u8) -> Vec<u8> {
+    let width = if stored_bits == 5 { 2 } else { stored_bits };
+    let row_bytes = 128 * width / 8;
+    let mut payload = vec![0u8; row_bytes + 2];
+    payload[0] = crumb;
+    payload[row_bytes..row_bytes + 2].copy_from_slice(&half::f16::from_f32(norm).to_le_bytes());
+    payload
+}
+
+fn install_cq(archive: &mut Archive, stored_bits: usize, payload: Vec<u8>) {
+    let offset = archive.data.len();
+    let bytes = payload.len();
+    archive.data.extend(payload);
+    archive.records[0] = Record {
+        dtype: 3,
+        shape: vec![1, 1],
+        offset,
+        bytes,
+        group: 128,
+        bits: stored_bits,
+    };
+}
+
+#[test]
+fn numeric_payloads_and_load_gates_fail_closed() {
+    let stock_bytes = fixture();
+    let stock = parse_archive(stock_bytes.clone()).unwrap();
+    let embedding = stock.values(0).unwrap();
+    assert_eq!(embedding.len(), 20);
+    assert!(embedding.iter().all(|value| value.is_finite()));
+    let loaded = load_cpu(parse_archive(stock_bytes.clone()).unwrap()).unwrap();
+    assert_eq!(loaded.geometry().kv_bits, 8);
+    let last = stock.records.len() - 1;
+    assert_eq!(stock.records[last].dtype, 4);
+    match stock.values(last) {
+        Ok(_) => panic!("raw tokenizer decoded as a tensor"),
+        Err(error) => assert!(
+            error.to_string().contains("RAW is not a numeric tensor"),
+            "{error}"
+        ),
+    }
+    match stock.values(stock.records.len()) {
+        Ok(_) => panic!("missing tensor decoded"),
+        Err(error) => assert!(error.to_string().contains("missing tensor"), "{error}"),
+    }
+    match stock.cq_gather(0) {
+        Ok(_) => panic!("f32 record opened as a gather table"),
+        Err(error) => assert!(
+            error
+                .to_string()
+                .contains("gather table must be a CQ matrix"),
+            "{error}"
+        ),
+    }
+
+    for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut bytes = stock_bytes.clone();
+        write_f32s(&mut bytes, stock.records[0].offset, &[value]);
+        let archive = parse_archive(bytes).unwrap();
+        match archive.values(0) {
+            Ok(_) => panic!("non-finite embedding decoded"),
+            Err(error) => assert!(error.to_string().contains("non-finite tensor"), "{error}"),
+        }
+    }
+    let mut negative_zero = stock_bytes.clone();
+    write_f32s(
+        &mut negative_zero,
+        stock.records[0].offset,
+        &[f32::from_bits(0x8000_0000)],
+    );
+    let archive = parse_archive(negative_zero).unwrap();
+    assert_eq!(archive.values(0).unwrap()[0].to_bits(), 0x8000_0000);
+    load_cpu(archive).unwrap();
+
+    let mut half_bytes = stock_bytes.clone();
+    let slot = record_slot(0);
+    half_bytes[slot] = 1;
+    put_u64(&mut half_bytes, slot + 28, 40);
+    let finite_half = half::f16::from_f32(1.0).to_le_bytes();
+    for index in 0..20 {
+        let at = stock.records[0].offset + index * 2;
+        half_bytes[at..at + 2].copy_from_slice(&finite_half);
+    }
+    let half_archive = parse_archive(half_bytes.clone()).unwrap();
+    assert_eq!(half_archive.records[0].dtype, 1);
+    assert_eq!(half_archive.values(0).unwrap(), vec![1.0; 20]);
+    load_cpu(parse_archive(half_bytes).unwrap()).unwrap();
+    let mut half_nan = stock_bytes.clone();
+    half_nan[slot] = 1;
+    put_u64(&mut half_nan, slot + 28, 40);
+    for index in 0..20 {
+        let at = stock.records[0].offset + index * 2;
+        half_nan[at..at + 2].copy_from_slice(&finite_half);
+    }
+    half_nan[stock.records[0].offset..stock.records[0].offset + 2]
+        .copy_from_slice(&half::f16::from_f32(f32::NAN).to_le_bytes());
+    match parse_archive(half_nan).unwrap().values(0) {
+        Ok(_) => panic!("non-finite f16 embedding decoded"),
+        Err(error) => assert!(error.to_string().contains("non-finite tensor"), "{error}"),
+    }
+
+    for value in [f32::NAN, f32::INFINITY] {
+        let mut bytes = stock_bytes.clone();
+        bytes[HEADER..HEADER + 4].copy_from_slice(&value.to_le_bytes());
+        reject_record_without(bytes, "non-finite codebook", "invalid tensor record");
+    }
+    for value in [1.0, f32::from_bits(0x8000_0000)] {
+        let mut bytes = stock_bytes.clone();
+        bytes[HEADER..HEADER + 4].copy_from_slice(&value.to_le_bytes());
+        let archive = parse_archive(bytes).unwrap();
+        assert_eq!(archive.codebook()[0].to_bits(), value.to_bits());
+        load_cpu(archive).unwrap();
+    }
+
+    for bits in [0_u32, 7, 9] {
+        let mut bytes = stock_bytes.clone();
+        put_u32(&mut bytes, 16, bits);
+        let archive = parse_archive(bytes).unwrap();
+        assert_eq!(archive.geometry().kv_bits, bits as usize);
+        reject_load(archive, "only A8 KV archives are supported");
+    }
+
+    let mut short = parse_archive(stock_bytes.clone()).unwrap();
+    short.records.pop();
+    reject_load_without(short, "missing model tensors", "only A8 KV");
+
+    assert_eq!(stock.records[2].shape, [2, 2]);
+    let mut rank = parse_archive(stock_bytes.clone()).unwrap();
+    rank.records[2].shape = vec![2];
+    reject_load_without(rank, "projection rank mismatch", "non-finite");
+
+    let permutations = permutation_offsets(&stock);
+    assert_eq!(permutations.len(), 2);
+    let mut swapped = stock_bytes.clone();
+    write_f32s(&mut swapped, permutations[0], &[1.0, 0.0]);
+    load_cpu(parse_archive(swapped).unwrap()).unwrap();
+    for values in [[0.0, 0.0], [0.0, 2.0], [-1.0, 0.0], [0.5, 1.0]] {
+        let mut bytes = stock_bytes.clone();
+        write_f32s(&mut bytes, permutations[0], &values);
+        reject_load_without(
+            parse_archive(bytes).unwrap(),
+            "invalid Hadamard permutation",
+            "non-finite",
+        );
+    }
+    let mut second = stock_bytes.clone();
+    write_f32s(&mut second, permutations[1], &[0.0, 0.0]);
+    reject_load(
+        parse_archive(second).unwrap(),
+        "invalid Hadamard permutation",
+    );
+    let mut poisoned = stock_bytes.clone();
+    write_f32s(&mut poisoned, permutations[1], &[f32::NAN, 1.0]);
+    reject_load_without(
+        parse_archive(poisoned).unwrap(),
+        "non-finite tensor",
+        "invalid Hadamard permutation",
+    );
+
+    let mut finite = parse_archive(stock_bytes.clone()).unwrap();
+    install_cq(&mut finite, 1, cq_payload(1, 1.0, 0));
+    let row = finite.values(0).unwrap();
+    assert_eq!(row.len(), 1);
+    assert!(row[0].is_finite());
+    let table = finite.cq_gather(0).unwrap();
+    assert_eq!(table.row(0, finite.codebook()).unwrap(), row);
+    match table.row(1, finite.codebook()) {
+        Ok(_) => panic!("cq row 1 decoded"),
+        Err(error) => assert!(error.to_string().contains("CQ row out of range"), "{error}"),
+    }
+
+    let mut short_row = parse_archive(stock_bytes.clone()).unwrap();
+    install_cq(&mut short_row, 1, vec![0; 16]);
+    match short_row.values(0) {
+        Ok(_) => panic!("short cq row decoded"),
+        Err(error) => {
+            let text = error.to_string();
+            assert!(text.contains("truncated CQ norm"), "{text}");
+            assert!(!text.contains("truncated CQ row"), "{text}");
+        }
+    }
+
+    let mut wide_bits = parse_archive(stock_bytes).unwrap();
+    install_cq(&mut wide_bits, 17, vec![0; 4]);
+    match wide_bits.values(0) {
+        Ok(_) => panic!("17-bit cq row decoded"),
+        Err(error) => assert!(
+            error.to_string().contains("unsupported CQ geometry"),
+            "{error}"
+        ),
+    }
+    let mut past_codebook = parse_archive(fixture()).unwrap();
+    install_cq(&mut past_codebook, 6, cq_payload(6, 0.0, 0));
+    match past_codebook.values(0) {
+        Ok(_) => panic!("cq codebook index 60 decoded"),
+        Err(error) => {
+            let text = error.to_string();
+            assert!(text.contains("CQ codebook index out of range"), "{text}");
+            assert!(!text.contains("unsupported CQ geometry"), "{text}");
+        }
+    }
+    let mut covered = parse_archive(fixture()).unwrap();
+    install_cq(&mut covered, 4, cq_payload(4, 0.0, 0));
+    assert!(covered
+        .values(0)
+        .unwrap()
+        .iter()
+        .all(|value| value.is_finite()));
+
+    for crumb in [0_u8, 1, 3] {
+        let mut ternary = parse_archive(fixture()).unwrap();
+        install_cq(&mut ternary, 5, cq_payload(5, 1.0, crumb));
+        assert!(ternary
+            .values(0)
+            .unwrap()
+            .iter()
+            .all(|value| value.is_finite()));
+    }
+    let mut crumb = parse_archive(fixture()).unwrap();
+    install_cq(&mut crumb, 5, cq_payload(5, 1.0, 2));
+    match crumb.values(0) {
+        Ok(_) => panic!("ternary crumb 2 decoded"),
+        Err(error) => assert!(
+            error.to_string().contains("invalid ternary crumb"),
+            "{error}"
+        ),
+    }
+
+    let mut nan_norm = parse_archive(fixture()).unwrap();
+    install_cq(&mut nan_norm, 1, cq_payload(1, f32::NAN, 0));
+    match nan_norm.values(0) {
+        Ok(_) => panic!("non-finite cq norm decoded"),
+        Err(error) => assert!(error.to_string().contains("non-finite tensor"), "{error}"),
+    }
+    match nan_norm.cq_gather(0) {
+        Ok(_) => panic!("non-finite cq gather opened"),
+        Err(error) => assert!(error.to_string().contains("non-finite tensor"), "{error}"),
+    }
+
+    let mut no_group = parse_archive(fixture()).unwrap();
+    no_group.records[0].dtype = 3;
+    no_group.records[0].group = 0;
+    no_group.records[0].bits = 1;
+    no_group.records[0].shape = vec![1, 1];
+    match no_group.values(0) {
+        Ok(_) => panic!("zero-group row decoded"),
+        Err(error) => assert!(error.to_string().contains("CQ row out of range"), "{error}"),
+    }
+    match no_group.cq_gather(0) {
+        Ok(_) => panic!("zero-group gather opened"),
+        Err(error) => assert!(
+            error
+                .to_string()
+                .contains("gather table must be a CQ matrix"),
+            "{error}"
+        ),
+    }
+}

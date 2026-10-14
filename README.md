@@ -323,6 +323,14 @@ trailing tokenizer still parses the directory and then fails the tokenizer.
 The campaign remains 14 passed and 3 failed. A Needle replacement is not
 certified.
 
+The [numeric payload checks](docs/evidence/akis/20261014-numeric-load/OUTCOME.md)
+load a finite F32 payload, a finite F16 payload, and a finite codebook value.
+NaN and infinity are rejected. KV bit widths other than 8 are rejected. A
+swapped Hadamard permutation loads, and a duplicate or fractional permutation
+is rejected. A 1-bit CQ row decodes, and an illegal crumb, a short norm, and
+a codebook index past the table are rejected. The campaign remains 14 passed
+and 3 failed. A Needle replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 
