@@ -1,0 +1,14 @@
+{
+  "parent_commit": "88fe81e2e6b95dfe27016aa4141903539f5cb005",
+  "date": "2026-10-14 Asia/Shanghai",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "power_rev": "830760cb9dc169893e0f9ba9e91ac5399c14d485",
+  "hashes": {
+    "target/release/a3s-akis": "502e9bc80a2788c8dfea15d52300906c10bdf8d3b14a7c16951dfac69dc1f1b2",
+    "previous_binary": "63c51272828d18bf0c5e35b5258eab6aa917a2e2c5cd8c284d3f685173ad12f4",
+    ".cache/needle3.cact": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+    "Cargo.lock": "60f3af39d03331f2e41c69751add8992461bc31b8bfb4232feb0ae0b925ef44b",
+    "tests/e2e/cases/tool_calls.json": "fce6550d61d2b3041cd4bcd4d19605366bbea6585a5d0bd9ba19a4adbb04c6ef"
+  },
+  "note": "Prompts of at least 128 tokens finish each layer's tokens together when probe cells are off. Shorter prompts stay on the token loop."
+}

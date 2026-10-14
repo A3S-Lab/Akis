@@ -244,6 +244,68 @@ fn batched_value_mix_matches_each_scaled_add() {
 }
 
 #[test]
+fn parallel_prefill_tail_matches_each_token() {
+    let m = model(InferenceLimits::default());
+    let d = m.geometry.width;
+    let n = m.geometry.lanes;
+    let scale = (d as f32).sqrt();
+    let embedding: Vec<f32> = m
+        .row(0, 2)
+        .unwrap()
+        .iter()
+        .map(|value| value * scale)
+        .collect();
+    let stream = embedding.repeat(n);
+    let ap = m.flat(m.mhc).unwrap();
+    let ao = m.flat(m.mhc + 1).unwrap();
+    let ar = m.flat(m.mhc + 2).unwrap();
+    let carry = || m.prepare_carry(&stream, 0, &ap, &ao, &ar).unwrap();
+    let count = 4;
+    let mut serial_streams = vec![stream.clone(); count];
+    let mut parallel_streams = vec![stream.clone(); count];
+    let mut serial_carries = Vec::new();
+    let mut parallel_carries = Vec::new();
+    for _ in 0..count {
+        serial_carries.push(carry());
+        parallel_carries.push(carry());
+    }
+    let b = m.base(0);
+    let o = b + if m.geometry.conv_taps > 0 { 3 } else { 0 };
+    let att_norm = m.flat(o + 8).unwrap();
+    let att_gate = m.flat(o + 9).unwrap();
+    let gate = crate::math::sigmoid(*att_gate.first().unwrap());
+    let mlp_norm = m.flat(o + 10).unwrap();
+    let tail = LayerTail {
+        att_norm: &att_norm,
+        gate,
+        mlp_norm: &mlp_norm,
+        o,
+        width: d,
+    };
+    let projected: Vec<f32> = (0..count * d)
+        .map(|i| (i % 7) as f32 * 0.01 - 0.02)
+        .collect();
+    let cancel = CancellationToken::new();
+    m.finish_prefill_range(
+        &mut serial_streams,
+        &mut serial_carries,
+        &projected,
+        &tail,
+        &cancel,
+    )
+    .unwrap();
+    m.finish_prefill_tokens(
+        &mut parallel_streams,
+        &mut parallel_carries,
+        &projected,
+        &tail,
+        &cancel,
+    )
+    .unwrap();
+    assert_eq!(serial_streams, parallel_streams);
+}
+
+#[test]
 fn batched_projection_matches_each_row_product() {
     let m = model(InferenceLimits::default());
     let device = m.runtime.device().tensor_device();

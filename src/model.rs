@@ -81,6 +81,14 @@ struct TokenCarry {
     res: Vec<f32>,
 }
 
+struct LayerTail<'a> {
+    att_norm: &'a [f32],
+    gate: f32,
+    mlp_norm: &'a [f32],
+    o: usize,
+    width: usize,
+}
+
 /// Last-token lane means and the activation-quantized final hidden state.
 #[derive(Debug)]
 pub struct LayerReadout {
@@ -1624,39 +1632,40 @@ impl Model {
                     .ok_or_else(|| Error::Request("missing attention gate".into()))?,
             );
             let mlp_norm = self.flat(o + 10)?;
-            for t in 0..count {
-                check_cancel(cancel)?;
-                let mut att = norm(row_at(&projected, t, d)?, &att_norm);
-                for (slot, value) in carries[t].x.iter_mut().zip(&att) {
-                    *slot += gate * value;
-                }
-                att = norm(&carries[t].x, &mlp_norm);
-                let mlp = self.mlp(&att, o)?;
-                let mut next = vec![0.0; n * d];
-                for lane in 0..n {
-                    for i in 0..d {
-                        next[lane * d + i] =
-                            carries[t].post[lane] * (carries[t].x[i] + mlp[i] - carries[t].u[i]);
-                        for j in 0..n {
-                            next[lane * d + i] +=
-                                carries[t].res[lane * n + j] * streams[t][j * d + i];
+            let tail = LayerTail {
+                att_norm: &att_norm,
+                gate,
+                mlp_norm: &mlp_norm,
+                o,
+                width: d,
+            };
+            // Each token reads its own carry and writes its own stream. Logits
+            // leave the probe cells off, so those tokens run together.
+            if state.collect_cells || state.capture_layers {
+                for t in 0..count {
+                    check_cancel(cancel)?;
+                    self.finish_prefill_token(
+                        &mut streams[t],
+                        &mut carries[t],
+                        row_at(&projected, t, d)?,
+                        &tail,
+                    )?;
+                    if state.collect_cells || (state.capture_layers && t + 1 == count) {
+                        let mut mean = vec![0.0; d];
+                        for i in 0..d {
+                            mean[i] =
+                                (0..n).map(|lane| streams[t][lane * d + i]).sum::<f32>() / n as f32;
+                        }
+                        if state.capture_layers && t + 1 == count {
+                            state.layer_means.push(mean.clone());
+                        }
+                        if state.collect_cells {
+                            token_cells[t].extend(mean);
                         }
                     }
                 }
-                streams[t] = next;
-                if state.collect_cells || (state.capture_layers && t + 1 == count) {
-                    let mut mean = vec![0.0; d];
-                    for i in 0..d {
-                        mean[i] =
-                            (0..n).map(|lane| streams[t][lane * d + i]).sum::<f32>() / n as f32;
-                    }
-                    if state.capture_layers && t + 1 == count {
-                        state.layer_means.push(mean.clone());
-                    }
-                    if state.collect_cells {
-                        token_cells[t].extend(mean);
-                    }
-                }
+            } else {
+                self.finish_prefill_tokens(&mut streams, &mut carries, &projected, &tail, cancel)?;
             }
         }
         if state.collect_cells {
@@ -1698,6 +1707,134 @@ impl Model {
         }
         check_cancel(cancel)?;
         Ok(logits)
+    }
+
+    /// Attention residual, MLP, and the lane mix for one prefill token.
+    fn finish_prefill_token(
+        &self,
+        stream: &mut Vec<f32>,
+        carry: &mut TokenCarry,
+        att_row: &[f32],
+        tail: &LayerTail<'_>,
+    ) -> Result<()> {
+        let d = tail.width;
+        let n = self.geometry.lanes;
+        if d == 0 || att_row.len() != d || carry.x.len() != d || carry.u.len() != d {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        let lanes = n
+            .checked_mul(d)
+            .ok_or_else(|| Error::Request("projection width mismatch".into()))?;
+        if stream.len() != lanes || carry.post.len() != n || carry.res.len() != n * n {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        let mut att = norm(att_row, tail.att_norm);
+        for (slot, value) in carry.x.iter_mut().zip(&att) {
+            *slot += tail.gate * value;
+        }
+        att = norm(&carry.x, tail.mlp_norm);
+        let mlp = self.mlp(&att, tail.o)?;
+        if mlp.len() < d {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        let mut next = vec![0.0; lanes];
+        for lane in 0..n {
+            for i in 0..d {
+                let mut value = carry.post[lane] * (carry.x[i] + mlp[i] - carry.u[i]);
+                for j in 0..n {
+                    value += carry.res[lane * n + j] * stream[j * d + i];
+                }
+                next[lane * d + i] = value;
+            }
+        }
+        *stream = next;
+        Ok(())
+    }
+
+    fn finish_prefill_range(
+        &self,
+        streams: &mut [Vec<f32>],
+        carries: &mut [TokenCarry],
+        projected: &[f32],
+        tail: &LayerTail<'_>,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        if tail.width == 0 || streams.len() != carries.len() {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        let rows = projected.len() / tail.width;
+        if !projected.len().is_multiple_of(tail.width) || rows != streams.len() {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        for (local, (stream, carry)) in streams.iter_mut().zip(carries.iter_mut()).enumerate() {
+            check_cancel(cancel)?;
+            self.finish_prefill_token(stream, carry, row_at(projected, local, tail.width)?, tail)?;
+        }
+        Ok(())
+    }
+
+    /// The tokens in one layer do not read each other's updated streams.
+    fn finish_prefill_tokens(
+        &self,
+        streams: &mut [Vec<f32>],
+        carries: &mut [TokenCarry],
+        projected: &[f32],
+        tail: &LayerTail<'_>,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let count = streams.len();
+        let width = tail.width;
+        let expected = count
+            .checked_mul(width)
+            .ok_or_else(|| Error::Request("projection width mismatch".into()))?;
+        if count != carries.len() || width == 0 || projected.len() != expected {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .clamp(1, count);
+        if threads == 1 {
+            return self.finish_prefill_range(streams, carries, projected, tail, cancel);
+        }
+        let chunk = count.div_ceil(threads);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let mut stream_rest = streams;
+            let mut carry_rest = carries;
+            let mut projected_rest = projected;
+            while !stream_rest.is_empty() {
+                let n = chunk.min(stream_rest.len());
+                let (stream_head, stream_tail) = stream_rest.split_at_mut(n);
+                let (carry_head, carry_tail) = carry_rest.split_at_mut(n);
+                let nbytes = n.saturating_mul(width);
+                let Some((projected_head, projected_tail)) =
+                    projected_rest.split_at_checked(nbytes)
+                else {
+                    let _ = sender.send(Err(Error::Request("projection width mismatch".into())));
+                    break;
+                };
+                stream_rest = stream_tail;
+                carry_rest = carry_tail;
+                projected_rest = projected_tail;
+                let sender = sender.clone();
+                scope.spawn(move || {
+                    let result = self.finish_prefill_range(
+                        stream_head,
+                        carry_head,
+                        projected_head,
+                        tail,
+                        cancel,
+                    );
+                    let _ = sender.send(result);
+                });
+            }
+        });
+        drop(sender);
+        while let Ok(result) = receiver.recv() {
+            result?;
+        }
+        Ok(())
     }
 
     fn step(

@@ -200,6 +200,15 @@ bytes, beside 5.04 seconds on the previous binary and the retained
 5.11-second sample. The campaign remains 13 passed and 4 failed. Packed CQ
 GEMM and a Needle replacement are not certified.
 
+The [prefill tokens](docs/evidence/akis/20261014-prefill-tokens/OUTCOME.md)
+finish each layer's tokens together when a prompt has at least 128 tokens and
+probe cells are off. Hello, the 256-token logits, and the 2048-token logits
+matched the previous binary with max absolute error 0 and the same top-1. One
+cold 2048-token sample took 2.61 seconds and 418,889,728 bytes, beside 4.23
+seconds on the previous binary and the retained 4.49-second sample. The
+campaign remains 13 passed and 4 failed. Packed CQ GEMM and a Needle
+replacement are not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 
