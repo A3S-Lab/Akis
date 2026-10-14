@@ -28,6 +28,9 @@ pub struct Model {
     weights: Vec<Tensor>,
     /// Engram gather tables that stay packed. `None` means the tensor is in `weights`.
     gather: Vec<Option<CqGather>>,
+    /// Complete projections stored once as contiguous `[in, out]`.
+    /// Logical archive shape remains `[out, in]`.
+    gemm: Vec<bool>,
     codebook: Vec<f32>,
     mhc: usize,
     engrams: usize,
@@ -123,23 +126,46 @@ impl Model {
             ));
         }
         let tokenizer = archive.tokenizer()?;
-        // Engram tables are row gathers, so they stay CQ. Projection GEMMs still expand to F32.
+        // Engram tables are row gathers, so they stay CQ. Complete projections
+        // expand once into contiguous [in, out]. A step then uses the contiguous
+        // GEMV. Sliced mixes stay [out, in] because a step narrows output rows.
+        let mut gemm = vec![false; archive.records.len() - 1];
+        for index in full_projection_indices(g) {
+            if index >= gemm.len() || gemm[index] {
+                return Err(Error::Archive("projection index is not a tensor".into()));
+            }
+            gemm[index] = true;
+        }
         let mut weights = Vec::new();
         let mut gather = Vec::new();
-        for i in 0..archive.records.len() - 1 {
-            if archive.records[i].dtype == 3 && gather_tables.contains(&i) {
+        let device = runtime.device().tensor_device();
+        let tensor_count = archive.records.len() - 1;
+        let specs: Vec<(u8, Vec<usize>)> = archive.records[..tensor_count]
+            .iter()
+            .map(|record| (record.dtype, record.shape.clone()))
+            .collect();
+        for (i, (dtype, shape)) in specs.into_iter().enumerate() {
+            let is_gather = dtype == 3 && gather_tables.contains(&i);
+            if gemm[i] && is_gather {
+                return Err(Error::Archive("projection overlaps a gather table".into()));
+            }
+            if is_gather {
                 gather.push(Some(archive.cq_gather(i)?));
-                weights.push(Tensor::from_vec(
-                    vec![0.0],
-                    &[1],
-                    runtime.device().tensor_device(),
-                )?);
+                weights.push(Tensor::from_vec(vec![0.0], &[1], device)?);
+            } else if gemm[i] {
+                if shape.len() != 2 {
+                    return Err(Error::Archive("projection rank mismatch".into()));
+                }
+                let mut values = archive.values(i)?;
+                transpose_out_in_inplace(&mut values, shape[0], shape[1])?;
+                weights.push(Tensor::from_vec(values, &[shape[1], shape[0]], device)?);
+                gather.push(None);
             } else {
                 gather.push(None);
                 weights.push(Tensor::from_vec(
                     archive.values(i)?,
-                    archive.records[i].shape.as_slice(),
-                    runtime.device().tensor_device(),
+                    shape.as_slice(),
+                    device,
                 )?);
             }
         }
@@ -178,13 +204,14 @@ impl Model {
                 return Err(Error::Archive("probe tensor count mismatch".into()));
             }
         }
-        let model = Self {
+        let mut model = Self {
             tokenizer,
             geometry: archive.geometry,
             sha256: archive.sha256,
             runtime,
             weights,
             gather,
+            gemm,
             codebook,
             mhc,
             engrams,
@@ -194,6 +221,22 @@ impl Model {
             heads,
         };
         model.validate_shapes()?;
+        // Probe projections are addressed by the manifest, which is known only
+        // after the tensors exist. Orient them after the archive-shape check.
+        for head in 0..model.heads.len() {
+            let index = model.heads[head].1 + 4;
+            if model.gemm.get(index).copied().unwrap_or(true) {
+                return Err(Error::Archive("probe projection index collision".into()));
+            }
+            let oriented = orient_tensor(
+                model
+                    .weights
+                    .get(index)
+                    .ok_or_else(|| Error::Archive("missing probe projection".into()))?,
+            )?;
+            model.weights[index] = oriented;
+            model.gemm[index] = true;
+        }
         Ok(model)
     }
 
@@ -210,6 +253,12 @@ impl Model {
     fn shape(&self, i: usize, expected: &[usize]) -> Result<()> {
         let matches = if let Some(Some(table)) = self.gather.get(i) {
             table.shape.as_slice() == expected
+        } else if self.gemm.get(i).copied().unwrap_or(false) {
+            let dims = self.weights.get(i).map(|t| t.dims()).unwrap_or(&[]);
+            expected.len() == 2
+                && dims.len() == 2
+                && dims[0] == expected[1]
+                && dims[1] == expected[0]
         } else {
             self.weights.get(i).is_some_and(|t| t.dims() == expected)
         };
@@ -325,17 +374,31 @@ impl Model {
         if let Some(Some(table)) = self.gather.get(i) {
             return table.row(row, &self.codebook);
         }
+        if self.gemm.get(i).copied().unwrap_or(false) {
+            // Archive row `r` is column `r` of the contiguous `[in, out]` matrix.
+            return Ok(self.weights[i].get_on_dim(1, row)?.to_vec1::<f32>()?);
+        }
         Ok(self.weights[i].get(row)?.flatten_all()?.to_vec1::<f32>()?)
     }
-    fn linear_tensor(&self, w: &Tensor, x: &[f32]) -> Result<Vec<f32>> {
+    /// `w` is contiguous `[in, out]`.
+    fn gemv(&self, w: &Tensor, x: &[f32]) -> Result<Vec<f32>> {
         let x = Tensor::from_slice(x, (1, x.len()), self.runtime.device().tensor_device())?;
-        Ok(x.matmul(&w.t()?)?.flatten_all()?.to_vec1::<f32>()?)
+        Ok(x.matmul(w)?.flatten_all()?.to_vec1::<f32>()?)
+    }
+    /// `w` is archive layout `[out, in]`, usually a narrow output-row slice.
+    fn linear_tensor(&self, w: &Tensor, x: &[f32]) -> Result<Vec<f32>> {
+        self.gemv(&w.t()?, x)
     }
     fn linear(&self, i: usize, x: &[f32]) -> Result<Vec<f32>> {
-        self.linear_tensor(&self.weights[i], x)
+        if self.gemm.get(i).copied().unwrap_or(false) {
+            self.gemv(&self.weights[i], x)
+        } else {
+            self.linear_tensor(&self.weights[i], x)
+        }
     }
     fn affine_input(&self, i: usize, x: &[f32]) -> Result<Vec<f32>> {
-        self.linear_tensor(&self.weights[i].t()?, x)
+        // These tensors are already stored as `[in, out]`.
+        self.gemv(&self.weights[i], x)
     }
     fn state(&self, collect_cells: bool) -> State {
         State {
@@ -1069,7 +1132,12 @@ impl Model {
         if state.capture_layers {
             state.quantized_hidden.clone_from(&hidden);
         }
-        let logits = self.linear_tensor(&self.weights[0].narrow(0, 0, g.out_vocab)?, &hidden)?;
+        let logits = if g.out_vocab == g.vocab {
+            self.gemv(&self.weights[0], &hidden)?
+        } else {
+            let head = self.weights[0].narrow(1, 0, g.out_vocab)?.contiguous()?;
+            self.gemv(&head, &hidden)?
+        };
         if logits.iter().any(|v| !v.is_finite()) {
             return Err(Error::Request("non-finite model output".into()));
         }
@@ -1079,6 +1147,76 @@ impl Model {
         }
         Ok(logits)
     }
+}
+
+fn full_projection_indices(g: &Geometry) -> Vec<usize> {
+    let stride = if g.conv_taps > 0 { 27 } else { 24 };
+    let mut ids = Vec::with_capacity(1 + g.layers * 5 + g.engram_sites.len() * 2);
+    ids.push(0);
+    for layer in 0..g.layers {
+        let b = 1 + layer * stride;
+        let o = b + if g.conv_taps > 0 { 3 } else { 0 };
+        ids.extend([b + 1, b + 2, b + 3, o + 6, o + 7]);
+    }
+    let engrams = 1 + stride * g.layers + 11;
+    for site in 0..g.engram_sites.len() {
+        let b = engrams + 4 * site;
+        ids.extend([b + 1, b + 2]);
+    }
+    ids
+}
+
+fn transpose_out_in_inplace(values: &mut [f32], rows: usize, cols: usize) -> Result<()> {
+    if rows.checked_mul(cols) != Some(values.len()) {
+        return Err(Error::Archive("projection shape mismatch".into()));
+    }
+    if rows == cols {
+        for row in 0..rows {
+            for col in row + 1..cols {
+                values.swap(row * cols + col, col * rows + row);
+            }
+        }
+        return Ok(());
+    }
+    if rows <= 1 || cols <= 1 {
+        return Ok(());
+    }
+    // Follow the permutation in place. A bit set marks visited indices so a
+    // non-square matrix does not need a second copy of the weights.
+    let n = values.len();
+    let mut seen = vec![0u64; n.div_ceil(64)];
+    for start in 0..n {
+        if seen[start / 64] & (1u64 << (start % 64)) != 0 {
+            continue;
+        }
+        let mut src = start;
+        let mut value = values[start];
+        loop {
+            let dst = (src % cols) * rows + src / cols;
+            seen[src / 64] |= 1u64 << (src % 64);
+            if dst == start {
+                values[dst] = value;
+                break;
+            }
+            value = std::mem::replace(&mut values[dst], value);
+            src = dst;
+        }
+    }
+    Ok(())
+}
+
+fn orient_tensor(tensor: &Tensor) -> Result<Tensor> {
+    let dims = tensor.dims();
+    if dims.len() != 2 {
+        return Err(Error::Archive("projection rank mismatch".into()));
+    }
+    let mut values = tensor.flatten_all()?.to_vec1::<f32>()?;
+    transpose_out_in_inplace(&mut values, dims[0], dims[1])?;
+    Ok(Tensor::from_vec(
+        values,
+        &[dims[1], dims[0]],
+        tensor.device(),
+    )?)
 }
 
 fn push_recent(history: &mut VecDeque<Vec<f32>>, value: Vec<f32>, capacity: usize) {

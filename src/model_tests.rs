@@ -285,6 +285,50 @@ fn layer_readout_reports_every_layer_and_rejects_cancellation() {
 }
 
 #[test]
+fn transpose_out_in_matches_the_index_permutation() {
+    let mut wide = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    super::transpose_out_in_inplace(&mut wide, 2, 3).unwrap();
+    assert_eq!(wide, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    let mut square = vec![1.0, 2.0, 3.0, 4.0];
+    super::transpose_out_in_inplace(&mut square, 2, 2).unwrap();
+    assert_eq!(square, vec![1.0, 3.0, 2.0, 4.0]);
+    let mut column = vec![1.0, 2.0, 3.0];
+    super::transpose_out_in_inplace(&mut column, 3, 1).unwrap();
+    assert_eq!(column, vec![1.0, 2.0, 3.0]);
+    let rows = 6;
+    let cols = 4;
+    let mut values: Vec<f32> = (0..rows * cols).map(|i| i as f32).collect();
+    let original = values.clone();
+    super::transpose_out_in_inplace(&mut values, rows, cols).unwrap();
+    for row in 0..rows {
+        for col in 0..cols {
+            assert_eq!(values[col * rows + row], original[row * cols + col]);
+        }
+    }
+}
+
+#[test]
+fn complete_projections_stay_in_matmul_order_and_keep_archive_rows() {
+    let m = model(InferenceLimits::default());
+    let width = m.geometry.width;
+    let vocab = m.geometry.vocab;
+    assert_eq!(m.weights[0].dims(), &[width, vocab]);
+    assert!(m.gemm[0]);
+    let o = 1 + if m.geometry.conv_taps > 0 { 3 } else { 0 };
+    assert_eq!(m.weights[o + 22].dims(), &[width, 8]);
+    assert!(!m.gemm[o + 22]);
+    let mut input = vec![0.0; width];
+    input[0] = 1.0;
+    let projected = m.linear(0, &input).unwrap();
+    assert_eq!(projected.len(), vocab);
+    for (token, logit) in projected.iter().enumerate() {
+        let row = m.row(0, token).unwrap();
+        assert_eq!(row.len(), width);
+        assert_eq!(*logit, row[0]);
+    }
+}
+
+#[test]
 fn cancellation_before_return_discards_the_generation() {
     let _arm = crate::test_support::arm("before-return");
     let m = model(InferenceLimits::default());

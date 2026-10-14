@@ -112,6 +112,11 @@ The [engram gather checkpoint](docs/evidence/akis/20261014-engram-gather/OUTCOME
 keeps engram tables packed and decodes one row at a time. The same 1025-token
 logits request drops to 271,843,328 bytes cold RSS. Projection matrices are
 still expanded F32. This is not a packed-kernel or replacement certification.
+The [contiguous GEMV checkpoint](docs/evidence/akis/20261014-contiguous-gemv/OUTCOME.md)
+stores those complete projections once as `[in, out]`. The 2048-token cold
+logits request fell from 25.622 seconds to 18.793 seconds. Cold RSS stays
+beside the 271,843,328-byte sample. Packed CQ GEMM and a Needle replacement
+are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
