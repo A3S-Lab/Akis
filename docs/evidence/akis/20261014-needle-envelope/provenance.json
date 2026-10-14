@@ -1,0 +1,14 @@
+{
+  "parent_commit": "3370ddd3b65e4775550eec4bccc4a020995ecb90",
+  "date": "2026-10-14 Asia/Shanghai",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "power_rev": "830760cb9dc169893e0f9ba9e91ac5399c14d485",
+  "hashes": {
+    "target/release/a3s-akis": "502e9bc80a2788c8dfea15d52300906c10bdf8d3b14a7c16951dfac69dc1f1b2",
+    ".cache/needle3.cact": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+    ".cache/libneedle3.dylib": "993d617e1136d644560c1fe59058e40810b9386645d01d2f6472af042f4c72ec",
+    "Cargo.lock": "60f3af39d03331f2e41c69751add8992461bc31b8bfb4232feb0ae0b925ef44b",
+    "tests/e2e/cases/needle_engine.json": "429f4940cc444f0da695d2f810dd348b69304740e7d211cef3ebb4449f82ec25"
+  },
+  "note": "No inference code changed. Eight frozen native envelopes compared with a3s-akis complete. Seven passed. missing-room failed."
+}

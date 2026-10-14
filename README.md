@@ -209,6 +209,12 @@ seconds on the previous binary and the retained 4.49-second sample. The
 campaign remains 13 passed and 4 failed. Packed CQ GEMM and a Needle
 replacement are not certified.
 
+The [needle envelope](docs/evidence/akis/20261014-needle-envelope/OUTCOME.md)
+compares the eight tool inputs with the pinned native calls. Seven match.
+`missing-room` still returns the living-room call. Inference code is unchanged,
+so the quality campaign remains 13 passed and 4 failed. Native behavioral
+compatibility and a Needle replacement are not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

@@ -1,0 +1,62 @@
+{
+  "library_sha256": "993d617e1136d644560c1fe59058e40810b9386645d01d2f6472af042f4c72ec",
+  "model_sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+  "cases": [
+    {
+      "id": "lights-on-en",
+      "input": "turn on the kitchen lights",
+      "function_calls": [{"name": "set_lights", "arguments": {"room": "kitchen", "on": true}}],
+      "suppressed_calls": [],
+      "ungrounded": []
+    },
+    {
+      "id": "lights-off-en",
+      "input": "turn off the bedroom lights",
+      "function_calls": [{"name": "set_lights", "arguments": {"room": "bedroom", "on": false}}],
+      "suppressed_calls": [],
+      "ungrounded": []
+    },
+    {
+      "id": "lights-on-zh",
+      "input": "打开厨房的灯。",
+      "function_calls": [],
+      "suppressed_calls": [],
+      "ungrounded": []
+    },
+    {
+      "id": "lights-off-zh",
+      "input": "关闭客厅的灯。",
+      "function_calls": [],
+      "suppressed_calls": [],
+      "ungrounded": []
+    },
+    {
+      "id": "irrelevant",
+      "input": "What is the capital of France?",
+      "function_calls": [],
+      "suppressed_calls": [],
+      "ungrounded": []
+    },
+    {
+      "id": "negated-action",
+      "input": "Do not turn on the kitchen lights.",
+      "function_calls": [{"name": "set_lights", "arguments": {"room": "kitchen", "on": false}}],
+      "suppressed_calls": [],
+      "ungrounded": []
+    },
+    {
+      "id": "missing-room",
+      "input": "Turn on the lights.",
+      "function_calls": [],
+      "suppressed_calls": [{"name": "set_lights", "arguments": {"room": "living room", "on": true}}],
+      "ungrounded": ["set_lights.room"]
+    },
+    {
+      "id": "quoted-action",
+      "input": "Translate the sentence 'turn on the kitchen lights' into French. Do not operate any lights.",
+      "function_calls": [],
+      "suppressed_calls": [],
+      "ungrounded": []
+    }
+  ]
+}

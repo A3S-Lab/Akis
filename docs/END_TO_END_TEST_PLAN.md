@@ -343,6 +343,7 @@ hello、256-token `<think>` 和 2048-token `user` 的 logits 相对上一版最�
 厨房开灯的 head score 仍是 0.8660065。
 48 个库测试和 4 个 CLI 进程测试通过。活动仍是 13 通过 / 4 失败，`missing-room` 的房间字符串仍是 `living room`。
 这不是 G4 完成，也不是 Needle 替换认证。
+随后用冻结的原生信封比较了八条工具输入。发布二进制仍是 `502e9bc8`。七条的 `function_calls`、`suppressed_calls` 与 `ungrounded` 与库 `993d617e` 一致。`missing-room` 仍把 `living room` 放在 `function_calls` 里。推理代码没有改，17 条质量活动没有重跑。这不是原生行为兼容，也不是 Needle 替换认证。
 
 ## 10. 扩展轨道的额外出口
 

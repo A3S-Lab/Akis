@@ -1,0 +1,9 @@
+{"id": "lights-on-en", "actual": {"function_calls": [{"name": "set_lights", "arguments": {"on": true, "room": "kitchen"}}], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "lights-off-en", "actual": {"function_calls": [{"name": "set_lights", "arguments": {"on": false, "room": "bedroom"}}], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "lights-on-zh", "actual": {"function_calls": [], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "lights-off-zh", "actual": {"function_calls": [], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "irrelevant", "actual": {"function_calls": [], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "negated-action", "actual": {"function_calls": [{"name": "set_lights", "arguments": {"on": false, "room": "kitchen"}}], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "missing-room", "actual": {"function_calls": [{"name": "set_lights", "arguments": {"on": true, "room": "living room"}}], "suppressed_calls": [], "ungrounded": []}, "status": "failed", "expected": {"function_calls": [], "suppressed_calls": [{"name": "set_lights", "arguments": {"room": "living room", "on": true}}], "ungrounded": ["set_lights.room"]}}
+{"id": "quoted-action", "actual": {"function_calls": [], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"passed": 7, "failed": 1, "binary_sha256": "502e9bc80a2788c8dfea15d52300906c10bdf8d3b14a7c16951dfac69dc1f1b2", "model_sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38", "library_sha256": "993d617e1136d644560c1fe59058e40810b9386645d01d2f6472af042f4c72ec", "oracle_sha256": "429f4940cc444f0da695d2f810dd348b69304740e7d211cef3ebb4449f82ec25"}
