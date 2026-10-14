@@ -191,6 +191,15 @@ and 0.999998738. One cold 2048-token sample took 5.11 seconds and 390,643,712
 bytes, beside 6.07 seconds on the previous binary. The campaign remains 13
 passed and 4 failed. Packed CQ GEMM and a Needle replacement are not certified.
 
+The [attention values](docs/evidence/akis/20261014-attention-values/OUTCOME.md)
+mix each long-prompt chunk as one product of the softmax weights and that kv
+head's values. Hello matched with max absolute error 0. The 256-token and
+2048-token logits kept the same top-1, with cosine 0.999998857 and
+0.999998940. One cold 2048-token sample took 4.49 seconds and 416,235,520
+bytes, beside 5.04 seconds on the previous binary and the retained
+5.11-second sample. The campaign remains 13 passed and 4 failed. Packed CQ
+GEMM and a Needle replacement are not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

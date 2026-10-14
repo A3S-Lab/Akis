@@ -1117,8 +1117,47 @@ impl Model {
         Ok(scores)
     }
 
+    /// `weights` is row-major `[rows, keys]` and `values` is `[keys, width]`.
+    /// One product replaces a per-key scaled add. Columns outside a query's
+    /// window stay zero, so they do not change a finite mix.
+    fn mix_values(
+        &self,
+        weights: &[f32],
+        values: &[f32],
+        rows: usize,
+        keys: usize,
+        width: usize,
+    ) -> Result<Vec<f32>> {
+        let weight_len = rows
+            .checked_mul(keys)
+            .ok_or_else(|| Error::Request("attention value width mismatch".into()))?;
+        let value_len = keys
+            .checked_mul(width)
+            .ok_or_else(|| Error::Request("attention value width mismatch".into()))?;
+        let out_len = rows
+            .checked_mul(width)
+            .ok_or_else(|| Error::Request("attention value width mismatch".into()))?;
+        if rows == 0
+            || keys == 0
+            || width == 0
+            || weights.len() != weight_len
+            || values.len() != value_len
+        {
+            return Err(Error::Request("attention value width mismatch".into()));
+        }
+        let device = self.runtime.device().tensor_device();
+        let left = Tensor::from_slice(weights, (rows, keys), device)?;
+        let right = Tensor::from_slice(values, (keys, width), device)?;
+        let mixed = left.matmul(&right)?.flatten_all()?.to_vec1::<f32>()?;
+        if mixed.len() != out_len {
+            return Err(Error::Request("attention value width mismatch".into()));
+        }
+        Ok(mixed)
+    }
+
     /// Long-prompt attention. Convolution and the KV cache stay in token order.
-    /// Scores for each kv head are one matrix product per chunk of 256 tokens.
+    /// Each kv head scores one matrix product per chunk of 256 tokens, then
+    /// mixes that chunk's values as one product of the softmax weights.
     fn mix_prefill_attention(
         &self,
         layer: usize,
@@ -1272,8 +1311,19 @@ impl Model {
             return Err(Error::Request("attention width mismatch".into()));
         }
         let scale = (qk as f32).sqrt();
+        let rows = count
+            .checked_mul(group)
+            .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+        let weight_len = rows
+            .checked_mul(union)
+            .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+        let value_len = union
+            .checked_mul(g.v_dim)
+            .ok_or_else(|| Error::Request("attention index overflow".into()))?;
         let mut packed_q = Vec::with_capacity(count * group * qk);
         let mut packed_k = Vec::with_capacity(union * qk);
+        let mut weights = vec![0.0f32; weight_len];
+        let mut packed_values = Vec::with_capacity(value_len);
         let mut scores_row = Vec::new();
         for kh in 0..g.kv_heads {
             packed_q.clear();
@@ -1298,6 +1348,7 @@ impl Model {
                 );
             }
             let scores = self.dot_matrix(&packed_q, &packed_k, qk)?;
+            weights.fill(0.0);
             for (local, &(start, end)) in chunk.iter().enumerate() {
                 if start < union_start || end > union_end || start > end {
                     return Err(Error::Request("attention index overflow".into()));
@@ -1310,18 +1361,39 @@ impl Model {
                     scores_row.clear();
                     scores_row.extend(row[rel_start..rel_end].iter().map(|value| value / scale));
                     softmax(&mut scores_row);
+                    let at = row_index
+                        .checked_mul(union)
+                        .and_then(|base| base.checked_add(rel_start))
+                        .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+                    let to = at
+                        .checked_add(scores_row.len())
+                        .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+                    let dest = weights
+                        .get_mut(at..to)
+                        .ok_or_else(|| Error::Request("attention value width mismatch".into()))?;
+                    dest.copy_from_slice(&scores_row);
+                }
+            }
+            packed_values.clear();
+            for index in union_start..union_end {
+                let value = row_at(log.values, index, nv)?;
+                let src = kh * g.v_dim;
+                packed_values.extend_from_slice(
+                    value
+                        .get(src..src + g.v_dim)
+                        .ok_or_else(|| Error::Request("attention value width mismatch".into()))?,
+                );
+            }
+            let mixed = self.mix_values(&weights, &packed_values, rows, union, g.v_dim)?;
+            for local in 0..count {
+                for head in 0..group {
+                    let row_index = local * group + head;
+                    let src = row_at(&mixed, row_index, g.v_dim)?;
                     let dst = (token + local) * ng + (kh * group + head) * g.v_dim;
                     let slot = out
                         .get_mut(dst..dst + g.v_dim)
                         .ok_or_else(|| Error::Request("attention width mismatch".into()))?;
-                    for (offset, &weight) in scores_row.iter().enumerate() {
-                        let value = row_at(log.values, start + offset, nv)?;
-                        let src = kh * g.v_dim;
-                        let lane = value.get(src..src + g.v_dim).ok_or_else(|| {
-                            Error::Request("attention value width mismatch".into())
-                        })?;
-                        axpy(slot, weight, lane);
-                    }
+                    slot.copy_from_slice(src);
                 }
             }
         }

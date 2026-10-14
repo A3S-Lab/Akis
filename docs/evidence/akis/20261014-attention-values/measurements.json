@@ -1,0 +1,48 @@
+{
+  "binary": "63c51272828d18bf0c5e35b5258eab6aa917a2e2c5cd8c284d3f685173ad12f4",
+  "previous_binary": "69565a9dc90f03c27838dca9785e5e9e8b5b33c35e0d6d9b82b71f6005b6fb4a",
+  "hello": {"ids": 3, "top1": 8110, "max_abs": 0.0, "cosine": 1.0, "path": "token_loop"},
+  "think_256": {
+    "ids": 256,
+    "top1": 38,
+    "max_abs": 0.20584106,
+    "cosine": 0.999998857,
+    "seconds": 1.09,
+    "rss": 306675712,
+    "previous_seconds": 1.17,
+    "previous_rss": 301023232
+  },
+  "user_2048": {
+    "ids": 2048,
+    "top1": 410,
+    "max_abs": 0.22872925,
+    "cosine": 0.999998940,
+    "seconds": 4.49,
+    "rss": 416235520,
+    "previous_seconds": 5.04,
+    "previous_rss": 389611520,
+    "other_seconds": [4.33],
+    "other_rss": [415580160],
+    "involuntary_switches": [178263, 187416],
+    "previous_involuntary_switches": 101784,
+    "retained_previous_seconds": [5.11]
+  },
+  "repeat_2048_max_abs": 0.0,
+  "probe": {
+    "passes": 320,
+    "rows": 1536,
+    "width": 64,
+    "keys_256_gemm_seconds": 0.148,
+    "keys_256_scalar_seconds": 0.679,
+    "keys_511_gemm_seconds": 0.191,
+    "keys_511_scalar_seconds": 1.410
+  },
+  "kitchen_complete": {
+    "tokens": 19,
+    "head_score": 0.8660065,
+    "mean_token_probability": 0.9602871,
+    "head_abs": 0.0,
+    "calls_match": true
+  },
+  "campaign": {"passed": 13, "failed": 4, "certify_exit": 1}
+}

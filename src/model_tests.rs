@@ -194,6 +194,56 @@ fn batched_attention_scores_match_each_query_dot() {
 }
 
 #[test]
+fn batched_value_mix_matches_each_scaled_add() {
+    let m = model(InferenceLimits::default());
+    let rows = 5;
+    let keys = 9;
+    let width = 8;
+    let weights: Vec<f32> = (0..rows * keys)
+        .map(|i| {
+            if i % 4 == 0 {
+                0.0
+            } else {
+                (i % 11) as f32 * 0.05 - 0.2
+            }
+        })
+        .collect();
+    let values: Vec<f32> = (0..keys * width)
+        .map(|i| (i % 13) as f32 * 0.03 - 0.1)
+        .collect();
+    let got = m.mix_values(&weights, &values, rows, keys, width).unwrap();
+    assert!(m.mix_values(&weights, &values, rows, keys, 0).is_err());
+    let mut expect = vec![0.0f32; rows * width];
+    for row in 0..rows {
+        let scale = &weights[row * keys..(row + 1) * keys];
+        let dst = &mut expect[row * width..(row + 1) * width];
+        for key in 0..keys {
+            crate::math::axpy(dst, scale[key], &values[key * width..(key + 1) * width]);
+        }
+    }
+    let max = got
+        .iter()
+        .zip(&expect)
+        .map(|(left, right)| (left - right).abs())
+        .fold(0.0f32, f32::max);
+    assert!(max < 1e-4, "{max}");
+    let top = |values: &[f32]| {
+        values
+            .iter()
+            .enumerate()
+            .max_by(|(left_i, left), (right_i, right)| {
+                left.total_cmp(right).then_with(|| right_i.cmp(left_i))
+            })
+            .map(|(index, _)| index)
+    };
+    for row in 0..rows {
+        let got_row = &got[row * width..(row + 1) * width];
+        let expect_row = &expect[row * width..(row + 1) * width];
+        assert_eq!(top(got_row), top(expect_row));
+    }
+}
+
+#[test]
 fn batched_projection_matches_each_row_product() {
     let m = model(InferenceLimits::default());
     let device = m.runtime.device().tensor_device();
