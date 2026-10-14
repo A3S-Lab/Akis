@@ -183,6 +183,14 @@ binary. Shorter prompts stay on the token loop after a 59-token head moved
 by 0.012. The campaign remains 13 passed and 4 failed. Packed CQ GEMM and a
 Needle replacement are not certified.
 
+The [attention scores](docs/evidence/akis/20261014-attention-scores/OUTCOME.md)
+score each kv head as one matrix product per 256-token chunk when the prompt
+has at least 128 tokens. Hello matched with max absolute error 0. The
+256-token and 2048-token logits kept the same top-1, with cosine 0.999997899
+and 0.999998738. One cold 2048-token sample took 5.11 seconds and 390,643,712
+bytes, beside 6.07 seconds on the previous binary. The campaign remains 13
+passed and 4 failed. Packed CQ GEMM and a Needle replacement are not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

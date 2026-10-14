@@ -67,6 +67,13 @@ struct ProjectedAttention<'a> {
     gates: &'a [f32],
 }
 
+struct AttentionLog<'a> {
+    queries: &'a [f32],
+    keys: &'a [f32],
+    values: &'a [f32],
+    spans: &'a [(usize, usize)],
+}
+
 struct TokenCarry {
     u: Vec<f32>,
     x: Vec<f32>,
@@ -980,13 +987,14 @@ impl Model {
         self.linear(o + 7, &mixed)
     }
 
-    fn mix_attention(
+    /// Convolution, norms, RoPE, and quantization shared by both attention paths.
+    fn staged_qkv(
         &self,
         layer: usize,
         pos: usize,
         state: &mut LayerState,
         projected: &ProjectedAttention<'_>,
-    ) -> Result<Vec<f32>> {
+    ) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>)> {
         let g = &self.geometry;
         let b = self.base(layer);
         let o = b + if g.conv_taps > 0 { 3 } else { 0 };
@@ -1002,9 +1010,21 @@ impl Model {
             )
         } else {
             (
-                state.q[state.q.len() - 1].clone(),
-                state.k[state.k.len() - 1].clone(),
-                state.v[state.v.len() - 1].clone(),
+                state
+                    .q
+                    .back()
+                    .ok_or_else(|| Error::Request("empty convolution state".into()))?
+                    .clone(),
+                state
+                    .k
+                    .back()
+                    .ok_or_else(|| Error::Request("empty convolution state".into()))?
+                    .clone(),
+                state
+                    .v
+                    .back()
+                    .ok_or_else(|| Error::Request("empty convolution state".into()))?
+                    .clone(),
             )
         };
         let qscale = self.flat(o + 4)?;
@@ -1029,6 +1049,18 @@ impl Model {
         for x in v.chunks_exact_mut(g.v_dim) {
             quant(x);
         }
+        Ok((q, k, v))
+    }
+
+    fn mix_attention(
+        &self,
+        layer: usize,
+        pos: usize,
+        state: &mut LayerState,
+        projected: &ProjectedAttention<'_>,
+    ) -> Result<Vec<f32>> {
+        let g = &self.geometry;
+        let (q, k, v) = self.staged_qkv(layer, pos, state, projected)?;
         let window = self.attention_window(layer, pos + 1);
         push_recent(&mut state.keys, k, window);
         push_recent(&mut state.values, v, window);
@@ -1062,6 +1094,238 @@ impl Model {
         }
         quant(&mut out);
         Ok(out)
+    }
+
+    /// One product of queries against the keys they can see. `rows` and `keys`
+    /// are row-major, and each row has `width` lanes.
+    fn dot_matrix(&self, rows: &[f32], keys: &[f32], width: usize) -> Result<Vec<f32>> {
+        if width == 0 || !rows.len().is_multiple_of(width) || !keys.len().is_multiple_of(width) {
+            return Err(Error::Request("attention width mismatch".into()));
+        }
+        let queries = rows.len() / width;
+        let key_count = keys.len() / width;
+        if queries == 0 || key_count == 0 {
+            return Ok(Vec::new());
+        }
+        let device = self.runtime.device().tensor_device();
+        let left = Tensor::from_slice(rows, (queries, width), device)?;
+        let right = Tensor::from_slice(keys, (key_count, width), device)?;
+        let scores = left.matmul(&right.t()?)?.flatten_all()?.to_vec1::<f32>()?;
+        if scores.len() != queries * key_count {
+            return Err(Error::Request("attention width mismatch".into()));
+        }
+        Ok(scores)
+    }
+
+    /// Long-prompt attention. Convolution and the KV cache stay in token order.
+    /// Scores for each kv head are one matrix product per chunk of 256 tokens.
+    fn mix_prefill_attention(
+        &self,
+        layer: usize,
+        base: usize,
+        state: &mut LayerState,
+        projected: &ProjectedAttention<'_>,
+        count: usize,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<f32>> {
+        let g = &self.geometry;
+        let group = g.heads.checked_div(g.kv_heads).unwrap_or(0);
+        if g.kv_heads == 0
+            || group == 0
+            || g.qk_dim == 0
+            || g.v_dim == 0
+            || g.heads != group * g.kv_heads
+        {
+            return Err(Error::Request("attention width mismatch".into()));
+        }
+        let nq = g.heads * g.qk_dim;
+        let nk = g.kv_heads * g.qk_dim;
+        let nv = g.kv_heads * g.v_dim;
+        let ng = g.heads * g.v_dim;
+        if projected.q.len() != count * nq
+            || projected.k.len() != count * nk
+            || projected.v.len() != count * nv
+            || projected.gates.len() != count * ng
+        {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        let mut key_log = Vec::new();
+        let mut value_log = Vec::new();
+        for row in &state.keys {
+            if row.len() != nk {
+                return Err(Error::Request("attention value width mismatch".into()));
+            }
+            key_log.extend_from_slice(row);
+        }
+        for row in &state.values {
+            if row.len() != nv {
+                return Err(Error::Request("attention value width mismatch".into()));
+            }
+            value_log.extend_from_slice(row);
+        }
+        if state.keys.len() != state.values.len() {
+            return Err(Error::Request("attention value width mismatch".into()));
+        }
+        let past = state.keys.len();
+        let mut windows = Vec::with_capacity(count);
+        for t in 0..count {
+            let pos = base
+                .checked_add(t)
+                .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+            let available = pos
+                .checked_add(1)
+                .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+            windows.push(self.attention_window(layer, available));
+        }
+        let spans = record_key_spans(past, &windows)?;
+        let mut queries = Vec::with_capacity(count * nq);
+        for (t, &window) in windows.iter().enumerate() {
+            check_cancel(cancel)?;
+            let (q, k, v) = self.staged_qkv(
+                layer,
+                base.checked_add(t)
+                    .ok_or_else(|| Error::Request("attention index overflow".into()))?,
+                state,
+                &ProjectedAttention {
+                    q: row_at(projected.q, t, nq)?,
+                    k: row_at(projected.k, t, nk)?,
+                    v: row_at(projected.v, t, nv)?,
+                    gates: row_at(projected.gates, t, ng)?,
+                },
+            )?;
+            if q.len() != nq || k.len() != nk || v.len() != nv {
+                return Err(Error::Request("attention width mismatch".into()));
+            }
+            queries.extend_from_slice(&q);
+            key_log.extend_from_slice(&k);
+            value_log.extend_from_slice(&v);
+            push_recent(&mut state.keys, k, window);
+            push_recent(&mut state.values, v, window);
+        }
+        let mut out = vec![0.0; count * ng];
+        let mut token = 0;
+        while token < count {
+            check_cancel(cancel)?;
+            let n = 256.min(count - token);
+            self.mix_score_chunk(
+                &mut out,
+                &AttentionLog {
+                    queries: &queries,
+                    keys: &key_log,
+                    values: &value_log,
+                    spans: &spans,
+                },
+                token,
+                n,
+            )?;
+            token += n;
+        }
+        for (t, row) in out.chunks_exact_mut(ng).enumerate() {
+            let gates = row_at(projected.gates, t, ng)?;
+            for (value, gate) in row.iter_mut().zip(gates) {
+                *value *= sigmoid(*gate);
+            }
+            quant(row);
+        }
+        Ok(out)
+    }
+
+    fn mix_score_chunk(
+        &self,
+        out: &mut [f32],
+        log: &AttentionLog<'_>,
+        token: usize,
+        count: usize,
+    ) -> Result<()> {
+        let g = &self.geometry;
+        let group = g.heads.checked_div(g.kv_heads).unwrap_or(0);
+        if g.kv_heads == 0 || group == 0 || g.qk_dim == 0 {
+            return Err(Error::Request("attention width mismatch".into()));
+        }
+        let qk = g.qk_dim;
+        let nq = g.heads * qk;
+        let nk = g.kv_heads * qk;
+        let nv = g.kv_heads * g.v_dim;
+        let ng = g.heads * g.v_dim;
+        let span_end = token
+            .checked_add(count)
+            .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+        let chunk = log
+            .spans
+            .get(token..span_end)
+            .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+        let union_start = chunk
+            .iter()
+            .map(|span| span.0)
+            .min()
+            .ok_or_else(|| Error::Request("attention width mismatch".into()))?;
+        let union_end = chunk
+            .iter()
+            .map(|span| span.1)
+            .max()
+            .ok_or_else(|| Error::Request("attention width mismatch".into()))?;
+        if union_end < union_start {
+            return Err(Error::Request("attention index overflow".into()));
+        }
+        let union = union_end - union_start;
+        if union == 0 {
+            return Err(Error::Request("attention width mismatch".into()));
+        }
+        let scale = (qk as f32).sqrt();
+        let mut packed_q = Vec::with_capacity(count * group * qk);
+        let mut packed_k = Vec::with_capacity(union * qk);
+        let mut scores_row = Vec::new();
+        for kh in 0..g.kv_heads {
+            packed_q.clear();
+            packed_k.clear();
+            for local in 0..count {
+                let query = row_at(log.queries, token + local, nq)?;
+                for head in 0..group {
+                    let src = (kh * group + head) * qk;
+                    packed_q.extend_from_slice(
+                        query
+                            .get(src..src + qk)
+                            .ok_or_else(|| Error::Request("attention width mismatch".into()))?,
+                    );
+                }
+            }
+            for index in union_start..union_end {
+                let row = row_at(log.keys, index, nk)?;
+                let src = kh * qk;
+                packed_k.extend_from_slice(
+                    row.get(src..src + qk)
+                        .ok_or_else(|| Error::Request("attention width mismatch".into()))?,
+                );
+            }
+            let scores = self.dot_matrix(&packed_q, &packed_k, qk)?;
+            for (local, &(start, end)) in chunk.iter().enumerate() {
+                if start < union_start || end > union_end || start > end {
+                    return Err(Error::Request("attention index overflow".into()));
+                }
+                let rel_start = start - union_start;
+                let rel_end = end - union_start;
+                for head in 0..group {
+                    let row_index = local * group + head;
+                    let row = row_at(&scores, row_index, union)?;
+                    scores_row.clear();
+                    scores_row.extend(row[rel_start..rel_end].iter().map(|value| value / scale));
+                    softmax(&mut scores_row);
+                    let dst = (token + local) * ng + (kh * group + head) * g.v_dim;
+                    let slot = out
+                        .get_mut(dst..dst + g.v_dim)
+                        .ok_or_else(|| Error::Request("attention width mismatch".into()))?;
+                    for (offset, &weight) in scores_row.iter().enumerate() {
+                        let value = row_at(log.values, start + offset, nv)?;
+                        let src = kh * g.v_dim;
+                        let lane = value.get(src..src + g.v_dim).ok_or_else(|| {
+                            Error::Request("attention value width mismatch".into())
+                        })?;
+                        axpy(slot, weight, lane);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn kron(&self, x: &[f32], a: usize, b: usize) -> Result<Vec<f32>> {
@@ -1260,24 +1524,21 @@ impl Model {
             {
                 return Err(Error::Request("projection width mismatch".into()));
             }
-            let mut packed_mix = Vec::with_capacity(count * ng);
-            for t in 0..count {
-                check_cancel(cancel)?;
-                let mixed = self.mix_attention(
-                    layer,
-                    base + t,
-                    &mut state.layers[layer],
-                    &ProjectedAttention {
-                        q: row_at(&q, t, nq)?,
-                        k: row_at(&k, t, nk)?,
-                        v: row_at(&v, t, nv)?,
-                        gates: row_at(&gates, t, ng)?,
-                    },
-                )?;
-                if mixed.len() != ng {
-                    return Err(Error::Request("projection width mismatch".into()));
-                }
-                packed_mix.extend(mixed);
+            let packed_mix = self.mix_prefill_attention(
+                layer,
+                base,
+                &mut state.layers[layer],
+                &ProjectedAttention {
+                    q: &q,
+                    k: &k,
+                    v: &v,
+                    gates: &gates,
+                },
+                count,
+                cancel,
+            )?;
+            if packed_mix.len() != count * ng {
+                return Err(Error::Request("projection width mismatch".into()));
             }
             let projected = self.project_matrix(&self.weights[o + 7], &packed_mix, ng)?;
             if projected.len() != count * d {
@@ -1600,6 +1861,31 @@ fn push_recent(history: &mut VecDeque<Vec<f32>>, value: Vec<f32>, capacity: usiz
         history.pop_front();
     }
     history.push_back(value);
+}
+
+/// Key-log spans produced by the same pop-front rule as `push_recent`.
+/// `past` is the number of rows already cached. Each window is the capacity
+/// used when that token is appended.
+fn record_key_spans(past: usize, windows: &[usize]) -> Result<Vec<(usize, usize)>> {
+    let mut start = 0usize;
+    let mut len = past;
+    let mut spans = Vec::with_capacity(windows.len());
+    for &window in windows {
+        if len == window && len > 0 {
+            start = start
+                .checked_add(1)
+                .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+            len -= 1;
+        }
+        len = len
+            .checked_add(1)
+            .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+        let end = start
+            .checked_add(len)
+            .ok_or_else(|| Error::Request("attention index overflow".into()))?;
+        spans.push((start, end));
+    }
+    Ok(spans)
 }
 
 fn add_bytes(total: &mut u64, factors: &[usize]) -> Result<()> {

@@ -1,0 +1,14 @@
+{
+  "parent_commit": "1d444586e02072a4b6af484a2dea0dabb2468be9",
+  "date": "2026-10-14 Asia/Shanghai",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "power_rev": "830760cb9dc169893e0f9ba9e91ac5399c14d485",
+  "hashes": {
+    "target/release/a3s-akis": "69565a9dc90f03c27838dca9785e5e9e8b5b33c35e0d6d9b82b71f6005b6fb4a",
+    "previous_binary": "226a74b0d520d0a0bb245763fc4f25b3afd90447409379fc2d5f56144c729e09",
+    ".cache/needle3.cact": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+    "Cargo.lock": "60f3af39d03331f2e41c69751add8992461bc31b8bfb4232feb0ae0b925ef44b",
+    "tests/e2e/cases/tool_calls.json": "fce6550d61d2b3041cd4bcd4d19605366bbea6585a5d0bd9ba19a4adbb04c6ef"
+  },
+  "note": "Prompts of at least 128 tokens score each kv head as one matrix product per 256-token chunk. Shorter prompts stay on the token loop."
+}

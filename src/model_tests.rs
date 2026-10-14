@@ -116,6 +116,84 @@ fn short_and_narrow_prompts_stay_on_the_token_loop() {
 }
 
 #[test]
+fn key_spans_follow_the_cache_deque() {
+    let phases = [
+        (0usize, vec![1usize, 2, 3, 3, 3, 3]),
+        (4, vec![4, 4, 4, 2, 2, 2]),
+        (0, vec![0, 0, 0]),
+        (10, vec![7, 7, 7, 7, 256]),
+    ];
+    for (past, windows) in phases {
+        let spans = super::record_key_spans(past, &windows).unwrap();
+        let mut deque = std::collections::VecDeque::new();
+        for id in 0..past {
+            deque.push_back(id);
+        }
+        for (token, &window) in windows.iter().enumerate() {
+            if deque.len() == window {
+                deque.pop_front();
+            }
+            deque.push_back(past + token);
+            let (start, end) = spans[token];
+            let got: Vec<usize> = deque.iter().copied().collect();
+            let expect: Vec<usize> = (start..end).collect();
+            assert_eq!(got, expect, "{past} {token} window {window}");
+        }
+    }
+}
+
+#[test]
+fn batched_attention_scores_match_each_query_dot() {
+    let m = model(InferenceLimits::default());
+    let width = 48;
+    let queries_n = 6;
+    let keys_n = 17;
+    let rows: Vec<f32> = (0..queries_n * width)
+        .map(|i| (i % 19) as f32 * 0.03 - 0.2)
+        .collect();
+    let keys: Vec<f32> = (0..keys_n * width)
+        .map(|i| (i % 23) as f32 * 0.02 - 0.15)
+        .collect();
+    let batched = m.dot_matrix(&rows, &keys, width).unwrap();
+    assert_eq!(batched.len(), queries_n * keys_n);
+    let top = |values: &[f32]| {
+        values
+            .iter()
+            .enumerate()
+            .max_by(|(left_i, left), (right_i, right)| {
+                left.total_cmp(right).then_with(|| right_i.cmp(left_i))
+            })
+            .map(|(index, _)| index)
+    };
+    for query in 0..queries_n {
+        let q = &rows[query * width..(query + 1) * width];
+        let mut one = Vec::with_capacity(keys_n);
+        for key in 0..keys_n {
+            one.push(crate::math::dot(q, &keys[key * width..(key + 1) * width]));
+        }
+        let got = &batched[query * keys_n..(query + 1) * keys_n];
+        let max = got
+            .iter()
+            .zip(&one)
+            .map(|(left, right)| (left - right).abs())
+            .fold(0.0f32, f32::max);
+        assert!(max < 1e-4, "{max}");
+        let mut left = got.to_vec();
+        let mut right = one;
+        let scale = (width as f32).sqrt();
+        for value in &mut left {
+            *value /= scale;
+        }
+        for value in &mut right {
+            *value /= scale;
+        }
+        crate::math::softmax(&mut left);
+        crate::math::softmax(&mut right);
+        assert_eq!(top(&left), top(&right));
+    }
+}
+
+#[test]
 fn batched_projection_matches_each_row_product() {
     let m = model(InferenceLimits::default());
     let device = m.runtime.device().tensor_device();

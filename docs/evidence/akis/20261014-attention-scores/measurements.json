@@ -1,0 +1,36 @@
+{
+  "binary": "69565a9dc90f03c27838dca9785e5e9e8b5b33c35e0d6d9b82b71f6005b6fb4a",
+  "previous_binary": "226a74b0d520d0a0bb245763fc4f25b3afd90447409379fc2d5f56144c729e09",
+  "hello": {"ids": 3, "top1": 8110, "max_abs": 0.0, "cosine": 1.0, "path": "token_loop"},
+  "think_256": {
+    "ids": 256,
+    "top1": 38,
+    "max_abs": 0.3241272,
+    "cosine": 0.999997899,
+    "seconds": 1.17,
+    "rss": 300122112,
+    "previous_seconds": 1.24,
+    "previous_rss": 298188800
+  },
+  "user_2048": {
+    "ids": 2048,
+    "top1": 410,
+    "max_abs": 0.16705513,
+    "cosine": 0.999998738,
+    "seconds": 5.11,
+    "rss": 390643712,
+    "previous_seconds": 6.07,
+    "previous_rss": 402833408,
+    "other_seconds": [5.82, 5.59],
+    "retained_previous_seconds": [6.18]
+  },
+  "repeat_2048_max_abs": 0.0,
+  "kitchen_complete": {
+    "tokens": 19,
+    "head_score": 0.8660065,
+    "mean_token_probability": 0.9602871,
+    "head_abs": 0.0,
+    "calls_match": true
+  },
+  "campaign": {"passed": 13, "failed": 4, "certify_exit": 1}
+}
