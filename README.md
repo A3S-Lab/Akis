@@ -221,6 +221,13 @@ frozen native envelopes match, including `missing-room`. The kitchen-light
 head score remains 0.8660065. The quality campaign is 14 passed and 3 failed.
 Chinese action and negation remain. A Needle replacement is not certified.
 
+The [command surface](docs/evidence/akis/20261014-surface/OUTCOME.md) runs
+inspect, tokenize, logits, layers, embed, generate, and complete on the pinned
+archive before the quality campaign. Hello generation stops at the four-token
+bound with `finished` false. The kitchen completion stays at head score
+0.8660065. The campaign remains 14 passed and 3 failed. A Needle replacement
+is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

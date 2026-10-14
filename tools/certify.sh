@@ -15,4 +15,6 @@ a3s-test run tests/e2e/terminal-smoke.acl \
     --tui-executable "$project/target/release/a3s-akis" \
     --tui-arg inspect --tui-arg "$model" \
     --tui-columns 120 --tui-rows 60 --infrastructure-retries 0 --json
+python3 tools/needle_e2e.py "$model" "$project/target/release/a3s-akis"
+python3 tools/surface_e2e.py "$model" "$project/target/release/a3s-akis"
 python3 tools/live_e2e.py "$model"
