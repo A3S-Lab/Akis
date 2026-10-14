@@ -153,6 +153,11 @@ short CLI arguments, and for one token past the fixture context. One
 8193-token logits request on needle3 was rejected before the forward. The
 campaign remains 13 passed and 4 failed. Full G0 and a Needle replacement
 are not certified.
+The [in-process repeat](docs/evidence/akis/20261014-repeat/OUTCOME.md) kept
+one model loaded for 1 warmup and 200 kitchen-light completes. Every call
+matched. Cold load was 599.6 ms and the process maximum resident set size
+was 279,674,880 bytes. The campaign remains 13 passed and 4 failed. Soak
+and a Needle replacement are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
