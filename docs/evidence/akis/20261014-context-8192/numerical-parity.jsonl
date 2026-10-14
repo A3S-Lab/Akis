@@ -1,0 +1,1 @@
+{"case": "long-8192-think", "cosine": 0.9999999403953552, "max_absolute_error": 6.103515625e-05, "top1_agreement": true, "reference_top": 38, "akis_top": 38, "tokens": 8192, "maximum_resident_bytes": 272875520, "seconds": 49.39}

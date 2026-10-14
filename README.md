@@ -138,6 +138,10 @@ split wide products across columns. Hello and the 256-token logits matched
 the kept binary with max absolute error 0. The cold 2048-token sample moved
 from 13.200 seconds to 32.020 seconds, so the split was not kept. Packed CQ
 GEMM and a Needle replacement are not certified.
+The [8192-token sample](docs/evidence/akis/20261014-context-8192/OUTCOME.md)
+ran one `<think>` logits request inside the current state budget: 49.39
+seconds, 272,875,520 bytes, cosine 0.999999940, top-1 38. Max context and a
+Needle replacement are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
