@@ -24,3 +24,19 @@ fn split_half_rope_is_a_rotation() {
     rope(&mut x, 7, 10000.0);
     assert!((dot(&x, &x) - before).abs() < 1e-4);
 }
+
+#[test]
+fn axpy_matches_one_multiply_and_one_add_per_element() {
+    for n in [0, 1, 2, 3, 4, 5, 7, 15, 16, 63, 64, 65, 768] {
+        let scale = (n as f32) * 0.01 - 0.3;
+        let x: Vec<f32> = (0..n).map(|i| (i as f32) * 0.017 - 0.4).collect();
+        let mut found = vec![0.2; n];
+        let mut expect = found.clone();
+        axpy(&mut found, scale, &x);
+        axpy_scalar(&mut expect, scale, &x);
+        assert_eq!(found, expect, "len {n}");
+    }
+    let mut found = vec![1.0, 2.0, 3.0, 4.0];
+    axpy(&mut found, 0.5, &[10.0, -2.0]);
+    assert_eq!(found, vec![6.0, 1.0, 3.0, 4.0]);
+}

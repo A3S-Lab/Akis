@@ -54,6 +54,50 @@ pub(crate) fn dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(a, b)| a * b).sum()
 }
 
+/// `y[i] += a * x[i]` for the shared prefix. Each lane is independent, so the
+/// ARM64 kernel rounds the same way as one multiply and one add per element.
+pub(crate) fn axpy(y: &mut [f32], a: f32, x: &[f32]) {
+    let n = y.len().min(x.len());
+    #[cfg(target_arch = "aarch64")]
+    {
+        axpy_neon(&mut y[..n], a, &x[..n]);
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        axpy_scalar(&mut y[..n], a, &x[..n]);
+    }
+}
+
+#[cfg(any(test, not(target_arch = "aarch64")))]
+fn axpy_scalar(y: &mut [f32], a: f32, x: &[f32]) {
+    for (slot, value) in y.iter_mut().zip(x) {
+        *slot += a * value;
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn axpy_neon(y: &mut [f32], a: f32, x: &[f32]) {
+    use std::arch::aarch64::{vaddq_f32, vdupq_n_f32, vld1q_f32, vmulq_f32, vst1q_f32};
+    let n = y.len();
+    let mut i = 0;
+    // Each group of four stays inside `n`. The pointers address f32 storage.
+    unsafe {
+        let scale = vdupq_n_f32(a);
+        while i + 4 <= n {
+            let mixed = vaddq_f32(
+                vld1q_f32(y.as_ptr().add(i)),
+                vmulq_f32(scale, vld1q_f32(x.as_ptr().add(i))),
+            );
+            vst1q_f32(y.as_mut_ptr().add(i), mixed);
+            i += 4;
+        }
+    }
+    while i < n {
+        y[i] += a * x[i];
+        i += 1;
+    }
+}
+
 pub(crate) fn sinkhorn(x: &mut [f32], n: usize) {
     for _ in 0..20 {
         for row in x.chunks_exact_mut(n) {

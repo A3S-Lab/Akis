@@ -1,5 +1,5 @@
 use crate::archive::CqGather;
-use crate::math::{dot, norm, quant, rms, rope, sigmoid, sinkhorn, softmax};
+use crate::math::{axpy, dot, norm, quant, rms, rope, sigmoid, sinkhorn, softmax};
 use crate::{Archive, CancellationToken, EmbeddedRuntime, Error, Geometry, Result, Tokenizer};
 use a3s_power::inference::{ExecutionDigest, ExecutionReceipt, ModelIdentity};
 use candle_core::Tensor;
@@ -954,10 +954,18 @@ impl Model {
                 })
                 .collect();
             softmax(&mut scores);
-            for (j, p) in scores.iter().enumerate() {
-                for i in 0..g.v_dim {
-                    out[head * g.v_dim + i] += p * state.values[j][kh * g.v_dim + i];
-                }
+            let width = g.v_dim;
+            let src = kh * width;
+            let dst = head * width;
+            for (j, &p) in scores.iter().enumerate() {
+                let row = state
+                    .values
+                    .get(j)
+                    .ok_or_else(|| Error::Request("attention value width mismatch".into()))?;
+                let values = row
+                    .get(src..src + width)
+                    .ok_or_else(|| Error::Request("attention value width mismatch".into()))?;
+                axpy(&mut out[dst..dst + width], p, values);
             }
         }
         let gates = self.linear(o + 6, &x)?;

@@ -117,6 +117,11 @@ stores those complete projections once as `[in, out]`. The 2048-token cold
 logits request fell from 25.622 seconds to 18.793 seconds. Cold RSS stays
 beside the 271,843,328-byte sample. Packed CQ GEMM and a Needle replacement
 are not certified.
+The [attention axpy checkpoint](docs/evidence/akis/20261014-attention-axpy/OUTCOME.md)
+checks each cached value row once and adds it with a contiguous scale. The
+2048-token cold logits request fell from 18.793 seconds to 13.406 seconds.
+Cold RSS stays beside the 272,236,544-byte sample. Packed CQ GEMM and a
+Needle replacement are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
