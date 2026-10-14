@@ -1046,3 +1046,24 @@ fn projection_payload_length_must_match_the_shape() {
     let loaded = load_cpu(width).unwrap();
     assert_eq!(loaded.geometry().width, 2);
 }
+
+#[test]
+fn permutation_length_must_match_hadamard() {
+    let stock = load_cpu(parse_archive(fixture()).unwrap()).unwrap();
+    assert_eq!(stock.geometry().hadamard, 2);
+
+    let opened = assert_open(&[(14, 4)]);
+    assert_eq!(opened.geometry().hadamard, 4);
+    assert_eq!(permutation_offsets(&opened).len(), 2);
+    match load_cpu(opened) {
+        Ok(_) => panic!("hadamard 4 loaded with a length-2 permutation"),
+        Err(error) => {
+            let text = error.to_string();
+            println!("observed rejection: {text}");
+            assert!(text.contains("permutation shape mismatch"), "{text}");
+            assert!(!text.contains("invalid Hadamard permutation"), "{text}");
+            assert!(!text.contains("expected shape"), "{text}");
+            assert!(!text.contains("invalid model geometry"), "{text}");
+        }
+    }
+}

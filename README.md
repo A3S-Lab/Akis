@@ -344,6 +344,11 @@ reject a projection whose opened payload length does not match the shape
 product. A shortened width vector is not that check. The campaign remains
 14 passed and 3 failed. A Needle replacement is not certified.
 
+The [permutation length checks](docs/evidence/akis/20261014-permutation-length/OUTCOME.md)
+load Hadamard 2 with a length-2 permutation. Hadamard 4 opens and is then
+rejected because that permutation is still length 2. The campaign remains
+14 passed and 3 failed. A Needle replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 
