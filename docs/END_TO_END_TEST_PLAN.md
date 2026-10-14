@@ -371,6 +371,8 @@ hello、256-token `<think>` 和 2048-token `user` 的 logits 相对上一版最�
 
 随后，有限的 F32 载荷、字节数匹配的有限 F16 载荷，以及码本里的 `1` 和负零都可以加载。F32、F16、码本或 CQ 范数中的 NaN 和无穷大被拒绝，错误是 `non-finite tensor` 或 `non-finite codebook`。末尾 RAW 记录的错误是 `RAW is not a numeric tensor`。不存在的下标是 `missing tensor`。F32 记录不能当作 gather 表。KV 位宽 0、7、9 被拒绝，错误是 `only A8 KV archives are supported`。位宽 8 可以加载。少一条记录的错误是 `missing model tensors`。投影秩不是 2 的错误是 `projection rank mismatch`。Hadamard 置换 `1, 0` 可以加载。重复值、2、负数和分数的错误是 `invalid Hadamard permutation`。同一条置换里的 NaN 先被报成非有限张量。1×1、group 128、1 bit 的 CQ 行可以解码。第 1 行的错误是 `CQ row out of range`。范数被截短的错误是 `truncated CQ norm`。17 bit 的错误是 `unsupported CQ geometry`。6 bit 的码本下标超出表，错误是 `CQ codebook index out of range`。4 bit 仍在码本内，可以解码。三元 crumb 0、1、3 可以解码，crumb 2 的错误是 `invalid ternary crumb`。group 为 0 时，行解码报超出范围，gather 入口报 `gather table must be a CQ matrix`。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。60 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
 
+随后，合成工件在没有探针清单时仍可加载。宽度向量只存一个元素时，错误是 `tensor 1 expected shape [2]`。投影存成 `[4, 1]` 时，错误是 `tensor 2 expected shape [2, 2]`。清单值 0、1.5、4，以及先 2 后 1，错误是 `invalid probe head manifest`。只有一个 `1`，或先 1 后 2 但没有对应张量，错误是 `probe tensor count mismatch`。code 1 的输出宽度为 1、code 2 的输出宽度为 1、code 3 的输出宽度为 3，并且 gain 的行数比层数多 1 时，可以加载。gain 为 3 行时，错误是 `invalid probe geometry`。code 2 的输出宽度为 2，或 code 3 的输出宽度为 1，错误是 `invalid probe output width`。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。61 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
+
 ## 10. 扩展轨道的额外出口
 
 - **训练/量化/导出**：固定 seed 的小数据训练、loss 与 held-out 质量、训练→导出→

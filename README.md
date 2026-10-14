@@ -331,6 +331,14 @@ is rejected. A 1-bit CQ row decodes, and an illegal crumb, a short norm, and
 a codebook index past the table are rejected. The campaign remains 14 passed
 and 3 failed. A Needle replacement is not certified.
 
+The [probe shape checks](docs/evidence/akis/20261014-probe-shapes/OUTCOME.md)
+reject a width vector and a projection whose stored shape is one step off the
+fixture. A probe manifest of 0, 1.5, or 4 is rejected. Codes 1, 2, and 3 load
+when the gain row count and the output width match. A gain with the wrong row
+count, or an output width that does not match the code, is rejected. The
+campaign remains 14 passed and 3 failed. A Needle replacement is not
+certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

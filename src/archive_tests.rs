@@ -876,3 +876,130 @@ fn numeric_payloads_and_load_gates_fail_closed() {
         ),
     }
 }
+
+fn final_norm_index(archive: &Archive) -> usize {
+    let geometry = archive.geometry();
+    let stride = if geometry.conv_taps > 0 { 27 } else { 24 };
+    let engrams = 1 + stride * geometry.layers + 11;
+    engrams + 4 * geometry.engram_sites.len()
+}
+
+fn push_numeric(archive: &mut Archive, shape: &[usize], values: &[f32]) {
+    assert_eq!(values.len(), shape.iter().copied().product::<usize>());
+    let offset = archive.data.len();
+    let bytes = values.len() * 4;
+    for value in values {
+        archive.data.extend(value.to_le_bytes());
+    }
+    let record = Record {
+        dtype: 2,
+        shape: shape.to_vec(),
+        offset,
+        bytes,
+        group: 0,
+        bits: 0,
+    };
+    let tail = archive.records.pop().expect("tokenizer");
+    archive.records.push(record);
+    archive.records.push(tail);
+}
+
+fn push_probe(archive: &mut Archive, code: f32, gain_rows: usize, out: usize) {
+    let width = archive.geometry().width;
+    let queries = 1;
+    push_numeric(archive, &[1], &[code]);
+    push_numeric(archive, &[gain_rows, width], &vec![0.0; gain_rows * width]);
+    push_numeric(archive, &[gain_rows, 1], &vec![0.0; gain_rows]);
+    push_numeric(archive, &[queries, width], &vec![0.0; queries * width]);
+    push_numeric(
+        archive,
+        &[queries, gain_rows, 1],
+        &vec![0.0; queries * gain_rows],
+    );
+    push_numeric(
+        archive,
+        &[out, queries * width],
+        &vec![0.0; out * queries * width],
+    );
+    push_numeric(archive, &[out], &vec![0.0; out]);
+    if code == 3.0 {
+        push_numeric(archive, &[3], &[0.0; 3]);
+    }
+}
+
+#[test]
+fn probe_manifest_and_tensor_shapes_fail_closed() {
+    let stock = parse_archive(fixture()).unwrap();
+    let final_norm = final_norm_index(&stock);
+    assert!(stock.geometry().engram_sites.is_empty());
+    assert_eq!(stock.records.len(), final_norm + 2);
+    assert_eq!(stock.records[1].shape, [2]);
+    assert_eq!(stock.records[2].shape, [2, 2]);
+    load_cpu(parse_archive(fixture()).unwrap()).unwrap();
+
+    let mut narrow = parse_archive(fixture()).unwrap();
+    narrow.records[1].shape = vec![1];
+    narrow.records[1].bytes = 4;
+    reject_load_without(narrow, "tensor 1 expected shape [2]", "projection rank");
+
+    let mut wide = parse_archive(fixture()).unwrap();
+    wide.records[2].shape = vec![4, 1];
+    reject_load_without(wide, "tensor 2 expected shape [2, 2]", "projection rank");
+
+    for code in [0.0, 1.5, 4.0] {
+        let mut archive = parse_archive(fixture()).unwrap();
+        push_numeric(&mut archive, &[1], &[code]);
+        reject_load_without(
+            archive,
+            "invalid probe head manifest",
+            "probe tensor count mismatch",
+        );
+    }
+    let mut reversed = parse_archive(fixture()).unwrap();
+    push_numeric(&mut reversed, &[2], &[2.0, 1.0]);
+    reject_load_without(
+        reversed,
+        "invalid probe head manifest",
+        "probe tensor count mismatch",
+    );
+
+    let mut counted = parse_archive(fixture()).unwrap();
+    push_numeric(&mut counted, &[1], &[1.0]);
+    reject_load_without(
+        counted,
+        "probe tensor count mismatch",
+        "invalid probe head manifest",
+    );
+    let mut ordered = parse_archive(fixture()).unwrap();
+    push_numeric(&mut ordered, &[2], &[1.0, 2.0]);
+    reject_load_without(
+        ordered,
+        "probe tensor count mismatch",
+        "invalid probe head manifest",
+    );
+
+    for (code, out) in [(1.0, 1), (2.0, 1), (3.0, 3)] {
+        let mut archive = parse_archive(fixture()).unwrap();
+        push_probe(&mut archive, code, 2, out);
+        load_cpu(archive).unwrap();
+    }
+
+    let mut rows = parse_archive(fixture()).unwrap();
+    push_probe(&mut rows, 1.0, 3, 1);
+    reject_load_without(rows, "invalid probe geometry", "invalid probe output width");
+
+    let mut confidence = parse_archive(fixture()).unwrap();
+    push_probe(&mut confidence, 2.0, 2, 2);
+    reject_load_without(
+        confidence,
+        "invalid probe output width",
+        "invalid probe geometry",
+    );
+    let mut ternary = parse_archive(fixture()).unwrap();
+    push_probe(&mut ternary, 3.0, 2, 1);
+    reject_load_without(
+        ternary,
+        "invalid probe output width",
+        "invalid probe geometry",
+    );
+}
