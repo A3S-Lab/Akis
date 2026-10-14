@@ -31,4 +31,4 @@ pub(crate) fn hit(stage: &'static str, cancel: &CancellationToken) {
 #[path = "synthetic_fixture.rs"]
 mod synthetic_fixture;
 
-pub(crate) use synthetic_fixture::{fixture, tokenizer_blob};
+pub(crate) use synthetic_fixture::{fixture, fixture_with_one_packed_gather, tokenizer_blob};

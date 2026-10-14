@@ -1134,3 +1134,72 @@ fn one_extra_request_is_rejected_while_a_permit_is_held() {
     assert_admission(&running.runtime, 0, 1);
     assert!(running.logits(&[4], &CancellationToken::new()).is_ok());
 }
+
+fn load_packed_gather(limit: u64) -> Result<Model> {
+    let limits = InferenceLimits {
+        max_resident_weight_bytes: limit,
+        ..InferenceLimits::default()
+    };
+    let archive = Archive::from_bytes(
+        crate::test_support::fixture_with_one_packed_gather(),
+        &limits,
+    )?;
+    Model::load(
+        archive,
+        EmbeddedRuntime::new(DevicePreference::Cpu, limits)?,
+    )
+}
+
+fn expanded_resident_bytes(archive: &Archive) -> u64 {
+    archive.records[..archive.records.len() - 1]
+        .iter()
+        .map(|record| {
+            record
+                .shape
+                .iter()
+                .try_fold(1u64, |product, &dimension| {
+                    product.checked_mul(dimension as u64)
+                })
+                .unwrap()
+                .checked_mul(4)
+                .unwrap()
+        })
+        .sum()
+}
+
+#[test]
+fn packed_gather_residency_counts_the_stored_bytes() {
+    let archive = Archive::from_bytes(
+        crate::test_support::fixture_with_one_packed_gather(),
+        &InferenceLimits::default(),
+    )
+    .unwrap();
+    let geometry = archive.geometry();
+    assert_eq!(geometry.engram_sites, &[0]);
+    let stride = if geometry.conv_taps > 0 { 27 } else { 24 };
+    let gather_index = 1 + stride * geometry.layers + 11;
+    let record = &archive.records[gather_index];
+    assert_eq!(record.dtype, 3);
+    let expanded_table = record.shape.iter().product::<usize>() * 4;
+    assert!(record.bytes > expanded_table);
+    let packed = resident_weight_bytes(&archive);
+    let expanded = expanded_resident_bytes(&archive);
+    assert_eq!(
+        packed - expanded,
+        record.bytes as u64 - expanded_table as u64
+    );
+    assert!(packed < InferenceLimits::default().max_resident_weight_bytes);
+    load_packed_gather(packed).unwrap();
+    let under = must_err(load_packed_gather(packed - 1));
+    assert!(
+        under.to_string().contains("resident weights exceed"),
+        "{under}"
+    );
+    let expanded_limit = must_err(load_packed_gather(expanded));
+    assert!(
+        expanded_limit
+            .to_string()
+            .contains("resident weights exceed"),
+        "{expanded_limit}"
+    );
+}

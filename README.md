@@ -278,6 +278,12 @@ forward. A cap of two accepts two permits and rejects the third. A failed
 request can run again. The campaign remains 14 passed and 3 failed. A Needle
 replacement is not certified.
 
+The [gather residency checks](docs/evidence/akis/20261014-gather-bytes/OUTCOME.md)
+count one packed gather table by its stored bytes. That length loads. One byte
+less is rejected, and the smaller expanded length is rejected. Production
+limits are unchanged. The campaign remains 14 passed and 3 failed. A Needle
+replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 
