@@ -298,6 +298,13 @@ fallback is off. Adjacent special markers stay separate token ids. An id at
 the piece count is rejected. The campaign remains 14 passed and 3 failed. A
 Needle replacement is not certified.
 
+The [tool name checks](docs/evidence/akis/20261014-tool-names/OUTCOME.md)
+reject an empty tool list, a 65th tool, an empty name, a 129-byte name, a
+control character, and a duplicate name before a call is returned. A list of
+64 tools, a 128-byte name, and a name containing a space pass those gates.
+Parameters that are not an object are rejected. The campaign remains 14
+passed and 3 failed. A Needle replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

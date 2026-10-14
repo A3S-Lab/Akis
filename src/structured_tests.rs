@@ -358,3 +358,105 @@ fn string_arguments_must_occur_in_the_user_input() {
     assert!(kept.is_empty());
     assert_eq!(ungrounded, vec!["set_lights.room".to_string()]);
 }
+
+fn object_tool(name: &str) -> Tool {
+    Tool {
+        name: name.to_string(),
+        description: "d".to_string(),
+        parameters: json!({"type":"object","properties":{}}),
+    }
+}
+
+#[test]
+fn tool_names_and_counts_stop_before_a_call() {
+    let model = Model::load(
+        crate::Archive::from_bytes(
+            crate::test_support::fixture(),
+            &crate::InferenceLimits::default(),
+        )
+        .unwrap(),
+        crate::EmbeddedRuntime::new(
+            crate::DevicePreference::Cpu,
+            crate::InferenceLimits::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    let context = "token or context limit exceeded";
+    let count = "tool count must be 1..64";
+    let name = "invalid or duplicate tool name";
+
+    let none = model.complete("hi", &[], 1, &cancel).unwrap_err();
+    assert!(none.to_string().contains(count), "{none}");
+    assert!(!none.to_string().contains("embedded-execution-receipt"));
+    assert_eq!(model.runtime().admission_snapshot().active, 0);
+
+    let mut many: Vec<Tool> = (0..65).map(|i| object_tool(&format!("t{i}"))).collect();
+    let extra = model.complete("hi", &many, 1, &cancel).unwrap_err();
+    assert!(extra.to_string().contains(count), "{extra}");
+    assert_eq!(model.runtime().admission_snapshot().active, 0);
+    many.pop();
+    assert_eq!(many.len(), 64);
+    let full = model.complete("hi", &many, 1, &cancel).unwrap_err();
+    assert!(
+        !full.to_string().contains(count) && full.to_string().contains(context),
+        "{full}"
+    );
+    assert_eq!(model.runtime().admission_snapshot().active, 0);
+
+    let rejected = [
+        String::new(),
+        "a".repeat(129),
+        "a\nb".to_string(),
+        "\u{0001}tool".to_string(),
+    ];
+    for bad in &rejected {
+        let error = model
+            .complete("hi", &[object_tool(bad)], 1, &cancel)
+            .unwrap_err();
+        assert!(error.to_string().contains(name), "{bad:?} {error}");
+        assert!(!error.to_string().contains("embedded-execution-receipt"));
+        assert_eq!(model.runtime().admission_snapshot().active, 0);
+    }
+    let duplicate = [object_tool("example"), object_tool("example")];
+    let duplicate_error = model.complete("hi", &duplicate, 1, &cancel).unwrap_err();
+    assert!(
+        duplicate_error.to_string().contains(name),
+        "{duplicate_error}"
+    );
+    assert_eq!(model.runtime().admission_snapshot().active, 0);
+
+    for accepted in ["a".repeat(128), "my tool".to_string()] {
+        let error = model
+            .complete("hi", &[object_tool(&accepted)], 1, &cancel)
+            .unwrap_err();
+        assert!(
+            !error.to_string().contains(name) && error.to_string().contains(context),
+            "{accepted:?} {error}"
+        );
+        assert_eq!(model.runtime().admission_snapshot().active, 0);
+    }
+    let distinct = [object_tool("alpha"), object_tool("beta")];
+    let distinct_error = model.complete("hi", &distinct, 1, &cancel).unwrap_err();
+    assert!(
+        !distinct_error.to_string().contains(name) && distinct_error.to_string().contains(context),
+        "{distinct_error}"
+    );
+    assert_eq!(model.runtime().admission_snapshot().active, 0);
+
+    let scalar = Tool {
+        name: "example".to_string(),
+        description: "d".to_string(),
+        parameters: json!({"type":"string"}),
+    };
+    let shape = model.complete("hi", &[scalar], 1, &cancel).unwrap_err();
+    assert!(
+        shape
+            .to_string()
+            .contains("tool parameters must be an object"),
+        "{shape}"
+    );
+    assert!(!shape.to_string().contains("embedded-execution-receipt"));
+    assert_eq!(model.runtime().admission_snapshot().active, 0);
+}
