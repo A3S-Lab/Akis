@@ -1,3 +1,4 @@
+use crate::archive::CqGather;
 use crate::math::{dot, norm, quant, rms, rope, sigmoid, sinkhorn, softmax};
 use crate::{Archive, CancellationToken, EmbeddedRuntime, Error, Geometry, Result, Tokenizer};
 use a3s_power::inference::{ExecutionDigest, ExecutionReceipt, ModelIdentity};
@@ -25,6 +26,9 @@ pub struct Model {
     sha256: String,
     runtime: EmbeddedRuntime,
     weights: Vec<Tensor>,
+    /// Engram gather tables that stay packed. `None` means the tensor is in `weights`.
+    gather: Vec<Option<CqGather>>,
+    codebook: Vec<f32>,
     mhc: usize,
     engrams: usize,
     final_norm: usize,
@@ -91,30 +95,55 @@ impl Model {
         if archive.records.len() < final_norm + 2 {
             return Err(Error::Archive("missing model tensors".into()));
         }
+        let gather_tables: Vec<usize> = (0..g.engram_sites.len())
+            .map(|site| engrams + 4 * site)
+            .collect();
         let mut bytes = 0u64;
-        for rec in &archive.records[..archive.records.len() - 1] {
-            let n = runtime
-                .limits()
-                .checked_elements(&rec.shape, "model tensor")?;
+        for (index, rec) in archive.records[..archive.records.len() - 1]
+            .iter()
+            .enumerate()
+        {
+            let packed = rec.dtype == 3 && gather_tables.contains(&index);
+            let n = if packed {
+                rec.bytes as u64
+            } else {
+                (runtime
+                    .limits()
+                    .checked_elements(&rec.shape, "model tensor")? as u64)
+                    .checked_mul(4)
+                    .ok_or_else(|| Error::Archive("resident size overflow".into()))?
+            };
             bytes = bytes
-                .checked_add((n as u64) * 4)
+                .checked_add(n)
                 .ok_or_else(|| Error::Archive("resident size overflow".into()))?;
         }
         if bytes > runtime.limits().max_resident_weight_bytes {
             return Err(Error::Archive(
-                "dequantized weights exceed Power residency limit".into(),
+                "resident weights exceed Power residency limit".into(),
             ));
         }
         let tokenizer = archive.tokenizer()?;
-        // shortcut: CQ matrices expand to F32; add packed kernels before claiming tiny-device memory use.
+        // Engram tables are row gathers, so they stay CQ. Projection GEMMs still expand to F32.
         let mut weights = Vec::new();
+        let mut gather = Vec::new();
         for i in 0..archive.records.len() - 1 {
-            weights.push(Tensor::from_vec(
-                archive.values(i)?,
-                archive.records[i].shape.as_slice(),
-                runtime.device().tensor_device(),
-            )?);
+            if archive.records[i].dtype == 3 && gather_tables.contains(&i) {
+                gather.push(Some(archive.cq_gather(i)?));
+                weights.push(Tensor::from_vec(
+                    vec![0.0],
+                    &[1],
+                    runtime.device().tensor_device(),
+                )?);
+            } else {
+                gather.push(None);
+                weights.push(Tensor::from_vec(
+                    archive.values(i)?,
+                    archive.records[i].shape.as_slice(),
+                    runtime.device().tensor_device(),
+                )?);
+            }
         }
+        let codebook = archive.codebook().to_vec();
         let permutation = |index: usize| -> Result<Vec<usize>> {
             let v = weights[index].flatten_all()?.to_vec1::<f32>()?;
             let mut seen = vec![false; g.hadamard];
@@ -155,6 +184,8 @@ impl Model {
             sha256: archive.sha256,
             runtime,
             weights,
+            gather,
+            codebook,
             mhc,
             engrams,
             final_norm,
@@ -177,7 +208,12 @@ impl Model {
     }
 
     fn shape(&self, i: usize, expected: &[usize]) -> Result<()> {
-        if self.weights.get(i).is_none_or(|t| t.dims() != expected) {
+        let matches = if let Some(Some(table)) = self.gather.get(i) {
+            table.shape.as_slice() == expected
+        } else {
+            self.weights.get(i).is_some_and(|t| t.dims() == expected)
+        };
+        if !matches {
             return Err(Error::Archive(format!(
                 "tensor {i} expected shape {expected:?}"
             )));
@@ -286,6 +322,9 @@ impl Model {
         Ok(self.weights[i].flatten_all()?.to_vec1::<f32>()?)
     }
     fn row(&self, i: usize, row: usize) -> Result<Vec<f32>> {
+        if let Some(Some(table)) = self.gather.get(i) {
+            return table.row(row, &self.codebook);
+        }
         Ok(self.weights[i].get(row)?.flatten_all()?.to_vec1::<f32>()?)
     }
     fn linear_tensor(&self, w: &Tensor, x: &[f32]) -> Result<Vec<f32>> {

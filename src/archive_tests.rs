@@ -140,6 +140,13 @@ fn every_cq_width_matches_an_independent_walsh_matrix() {
         for (i, (a, b)) in actual.iter().zip(expected).enumerate() {
             assert!((a - b).abs() < 1e-4, "CQ {width} element {i}: {a} != {b}");
         }
+        let table = archive.cq_gather(0).unwrap();
+        for row in 0..rows {
+            assert_eq!(
+                table.row(row, &archive.codebook).unwrap(),
+                actual[row * cols..(row + 1) * cols]
+            );
+        }
         if width == 5 {
             archive.data[offset] = (archive.data[offset] & !3) | 2;
             assert!(archive.values(0).is_err());

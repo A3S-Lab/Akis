@@ -108,6 +108,10 @@ The [parity checkpoint](docs/evidence/akis/20261014-parity/OUTCOME.md) adds
 activation-quantization path on the pinned artifact. The 2048-token request
 completed inside the existing state budget. Full G1 and a Needle replacement
 are not certified.
+The [engram gather checkpoint](docs/evidence/akis/20261014-engram-gather/OUTCOME.md)
+keeps engram tables packed and decodes one row at a time. The same 1025-token
+logits request drops to 271,843,328 bytes cold RSS. Projection matrices are
+still expanded F32. This is not a packed-kernel or replacement certification.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

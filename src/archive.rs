@@ -81,6 +81,9 @@ impl Archive {
     pub fn sha256(&self) -> &str {
         &self.sha256
     }
+    pub(crate) fn codebook(&self) -> &[f32] {
+        &self.codebook
+    }
     pub fn open(path: impl AsRef<Path>, limits: &InferenceLimits) -> Result<Self> {
         limits.validate()?;
         let file = File::open(path)?;
@@ -322,52 +325,16 @@ impl Archive {
                 .map(|x| f32::from_le_bytes([x[0], x[1], x[2], x[3]]))
                 .collect(),
             3 => {
-                let rows = r.shape[0];
-                let cols = r.shape[1];
-                let padded = cols.div_ceil(r.group) * r.group;
-                let bits = if r.bits == 5 { 2 } else { r.bits };
-                let row_bytes = padded * bits / 8;
-                let mut out = vec![0.0; rows * cols];
-                for row in 0..rows {
-                    for group in 0..padded / r.group {
-                        let ni = rows * row_bytes + (row * padded / r.group + group) * 2;
-                        let norm =
-                            f16::from_bits(u16::from_le_bytes([data[ni], data[ni + 1]])).to_f32();
-                        let mut values = vec![0.0; r.group];
-                        for (j, value) in values.iter_mut().enumerate() {
-                            let bit = (group * r.group + j) * bits;
-                            let byte = row * row_bytes + bit / 8;
-                            let mut word = data[byte] as usize;
-                            if bit % 8 + bits > 8 {
-                                word |= (data[byte + 1] as usize) << 8;
-                            }
-                            let idx = (word >> (bit % 8)) & ((1 << bits) - 1);
-                            let centroid = match r.bits {
-                                1 => {
-                                    (if idx == 0 { -1.0 } else { 1.0 })
-                                        * (2.0 / std::f32::consts::PI).sqrt()
-                                        / (r.group as f32).sqrt()
-                                }
-                                5 => {
-                                    (match idx {
-                                        3 => -1.2240064,
-                                        0 => 0.0,
-                                        1 => 1.2240064,
-                                        _ => return Err(bad("invalid ternary crumb")),
-                                    }) / (r.group as f32).sqrt()
-                                }
-                                b => self.codebook[(1 << b) - 4 + idx],
-                            };
-                            *value = centroid * norm;
-                        }
-                        hadamard(&mut values);
-                        for (j, v) in values.into_iter().enumerate() {
-                            let col = group * r.group + j;
-                            if col < cols {
-                                out[row * cols + col] = v;
-                            }
-                        }
-                    }
+                let mut out = Vec::with_capacity(r.shape[0].saturating_mul(r.shape[1]));
+                for row in 0..r.shape[0] {
+                    out.extend(decode_cq_row(
+                        data,
+                        row,
+                        &r.shape,
+                        r.group,
+                        r.bits,
+                        &self.codebook,
+                    )?);
                 }
                 out
             }
@@ -378,6 +345,128 @@ impl Archive {
         }
         Ok(values)
     }
+}
+
+/// CQ matrix kept packed. Callers decode one row, which is the engram gather path.
+#[derive(Clone, Debug)]
+pub(crate) struct CqGather {
+    rows: usize,
+    cols: usize,
+    group: usize,
+    bits: usize,
+    data: Vec<u8>,
+    pub shape: Vec<usize>,
+}
+
+impl CqGather {
+    pub(crate) fn row(&self, row: usize, codebook: &[f32]) -> Result<Vec<f32>> {
+        decode_cq_row(
+            &self.data,
+            row,
+            &self.shape,
+            self.group,
+            self.bits,
+            codebook,
+        )
+    }
+}
+
+impl Archive {
+    /// Copy one CQ matrix and reject a non-finite or illegal row before inference.
+    pub(crate) fn cq_gather(&self, index: usize) -> Result<CqGather> {
+        let r = self
+            .records
+            .get(index)
+            .ok_or_else(|| bad("missing tensor"))?;
+        if r.dtype != 3 || r.shape.len() != 2 || r.group == 0 {
+            return Err(bad("gather table must be a CQ matrix"));
+        }
+        let table = CqGather {
+            rows: r.shape[0],
+            cols: r.shape[1],
+            group: r.group,
+            bits: r.bits,
+            data: self.data[r.offset..r.offset + r.bytes].to_vec(),
+            shape: r.shape.clone(),
+        };
+        for row in 0..table.rows {
+            let values = table.row(row, &self.codebook)?;
+            if values.len() != table.cols || values.iter().any(|value| !value.is_finite()) {
+                return Err(bad("non-finite tensor"));
+            }
+        }
+        Ok(table)
+    }
+}
+
+fn decode_cq_row(
+    data: &[u8],
+    row: usize,
+    shape: &[usize],
+    group: usize,
+    stored_bits: usize,
+    codebook: &[f32],
+) -> Result<Vec<f32>> {
+    let (rows, cols) = (
+        shape.first().copied().unwrap_or(0),
+        shape.get(1).copied().unwrap_or(0),
+    );
+    if group == 0 || row >= rows || shape.len() != 2 {
+        return Err(bad("CQ row out of range"));
+    }
+    let padded = cols.div_ceil(group) * group;
+    let bits = if stored_bits == 5 { 2 } else { stored_bits };
+    if bits == 0 || bits > 16 {
+        return Err(bad("unsupported CQ geometry"));
+    }
+    let row_bytes = padded * bits / 8;
+    let mut out = vec![0.0; cols];
+    for group_index in 0..padded / group {
+        let ni = rows * row_bytes + (row * padded / group + group_index) * 2;
+        let norm_bytes = data
+            .get(ni..ni + 2)
+            .ok_or_else(|| bad("truncated CQ norm"))?;
+        let norm = f16::from_bits(u16::from_le_bytes([norm_bytes[0], norm_bytes[1]])).to_f32();
+        let mut values = vec![0.0; group];
+        for (j, value) in values.iter_mut().enumerate() {
+            let bit = (group_index * group + j) * bits;
+            let byte = row * row_bytes + bit / 8;
+            let mut word = *data.get(byte).ok_or_else(|| bad("truncated CQ row"))? as usize;
+            if bit % 8 + bits > 8 {
+                word |= (*data.get(byte + 1).ok_or_else(|| bad("truncated CQ row"))? as usize) << 8;
+            }
+            let idx = (word >> (bit % 8)) & ((1 << bits) - 1);
+            let centroid = match stored_bits {
+                1 => {
+                    (if idx == 0 { -1.0 } else { 1.0 }) * (2.0 / std::f32::consts::PI).sqrt()
+                        / (group as f32).sqrt()
+                }
+                5 => {
+                    (match idx {
+                        3 => -1.2240064,
+                        0 => 0.0,
+                        1 => 1.2240064,
+                        _ => return Err(bad("invalid ternary crumb")),
+                    }) / (group as f32).sqrt()
+                }
+                width => {
+                    let at = (1 << width) - 4 + idx;
+                    *codebook
+                        .get(at)
+                        .ok_or_else(|| bad("CQ codebook index out of range"))?
+                }
+            };
+            *value = centroid * norm;
+        }
+        hadamard(&mut values);
+        for (j, v) in values.into_iter().enumerate() {
+            let col = group_index * group + j;
+            if col < cols {
+                out[col] = v;
+            }
+        }
+    }
+    Ok(out)
 }
 
 pub(crate) fn hadamard(x: &mut [f32]) {
