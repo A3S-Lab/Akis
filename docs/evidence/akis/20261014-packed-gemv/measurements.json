@@ -1,0 +1,29 @@
+{
+  "kept_binary": "d36d4ca35cc44f6db7bbc32fa3f6096848f4bc08910c0d0940ea60ffdab12c5b",
+  "serial_trial_binary": "e0c7bf1d6be2100ad4b49d77328f6f36bebd699664b47abe83ec8e04ed086e66",
+  "row_split_trial_binary": "d552be25de3938117a37f927f3730f5ffae54795491652cdc7de64eec2e5fd97",
+  "hello": {
+    "ids": 3,
+    "top1": 8110,
+    "max_abs": 0.17288923263549805,
+    "cosine": 0.9999937529987833,
+    "kept_seconds": 1.28,
+    "kept_rss": 266485760,
+    "serial_seconds": 1.16,
+    "serial_rss": 88031232
+  },
+  "think_256": {
+    "ids": 256,
+    "top1": 38,
+    "max_abs": 0.39241981506347656,
+    "cosine": 0.9999968556104996,
+    "kept_seconds": 2.35,
+    "kept_rss": 272334848,
+    "serial_seconds": 3.49,
+    "serial_rss": 93667328,
+    "row_split_seconds": 3.16,
+    "row_split_user_seconds": 4.26,
+    "row_split_sys_seconds": 3.85,
+    "row_split_rss": 93978624
+  }
+}

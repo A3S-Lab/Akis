@@ -158,6 +158,14 @@ one model loaded for 1 warmup and 200 kitchen-light completes. Every call
 matched. Cold load was 599.6 ms and the process maximum resident set size
 was 279,674,880 bytes. The campaign remains 13 passed and 4 failed. Soak
 and a Needle replacement are not certified.
+The [packed CQ GEMV trial](docs/evidence/akis/20261014-packed-gemv/OUTCOME.md)
+kept complete CQ projections packed and applied each group Hadamard to the
+input once. Hello and the 256-token logits stayed above cosine 0.999 with
+the same top-1. The cold 256-token sample moved from 2.35 seconds to 3.49
+seconds, and a 6-core row split still took 3.16 seconds, so the kernel was
+not kept. Cold RSS on that sample fell from 272,334,848 bytes to 93,667,328
+bytes on the trial binary only. Packed CQ GEMM and a Needle replacement are
+not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
