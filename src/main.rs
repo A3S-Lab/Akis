@@ -58,7 +58,7 @@ fn run(cancel: &CancellationToken) -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 2 {
         return Err(Error::Request(
-            "usage: a3s-akis inspect MODEL | tokenize MODEL TEXT | logits MODEL TEXT | generate MODEL TEXT MAX_TOKENS | complete MODEL < request.json | embed MODEL TEXT".into(),
+            "usage: a3s-akis inspect MODEL | tokenize MODEL TEXT | logits MODEL TEXT | layers MODEL TEXT | generate MODEL TEXT MAX_TOKENS | complete MODEL < request.json | embed MODEL TEXT".into(),
         ));
     }
     let archive = Archive::open(&args[1], &InferenceLimits::default())?;
@@ -98,6 +98,26 @@ fn run(cancel: &CancellationToken) -> Result<()> {
             let logits = model.logits(&ids, cancel)?;
             output(
                 &serde_json::json!({"ids":ids,"logits":logits}),
+                false,
+                cancel,
+            )?;
+        }
+        "layers" if args.len() == 3 => {
+            let runtime = EmbeddedRuntime::new(DevicePreference::Cpu, InferenceLimits::default())?;
+            let model = Model::load(archive, runtime)?;
+            let mut ids = vec![model.tokenizer().bos];
+            ids.extend(model.tokenizer().encode_bounded(
+                &args[2],
+                model.runtime().limits(),
+                cancel,
+            )?);
+            let readout = model.layer_readout(&ids, cancel)?;
+            output(
+                &serde_json::json!({
+                    "ids": ids,
+                    "layers": readout.layers,
+                    "quantized_hidden": readout.quantized_hidden,
+                }),
                 false,
                 cancel,
             )?;

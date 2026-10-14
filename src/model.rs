@@ -48,6 +48,16 @@ struct State {
     engram_values: Vec<VecDeque<Vec<f32>>>,
     cells: Vec<Vec<f32>>,
     collect_cells: bool,
+    capture_layers: bool,
+    layer_means: Vec<Vec<f32>>,
+    quantized_hidden: Vec<f32>,
+}
+
+/// Last-token lane means and the activation-quantized final hidden state.
+#[derive(Debug)]
+pub struct LayerReadout {
+    pub layers: Vec<Vec<f32>>,
+    pub quantized_hidden: Vec<f32>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -297,7 +307,51 @@ impl Model {
             engram_values: vec![VecDeque::new(); self.geometry.engram_sites.len()],
             cells: Vec::new(),
             collect_cells,
+            capture_layers: false,
+            layer_means: Vec::new(),
+            quantized_hidden: Vec::new(),
         }
+    }
+
+    fn capturing_state(&self) -> State {
+        let mut state = self.state(false);
+        state.capture_layers = true;
+        state
+    }
+
+    /// Lane-mean stream after every layer, then the deployed A8 final hidden.
+    /// The caller token and the process stop flag are both observed.
+    pub fn layer_readout(
+        &self,
+        tokens: &[u32],
+        cancel: &CancellationToken,
+    ) -> Result<LayerReadout> {
+        let _permit = self.runtime.begin(cancel)?;
+        self.check_request(tokens, 0, false, 0)?;
+        let mut state = self.capturing_state();
+        for &token in tokens {
+            self.step(token, &mut state, cancel)?;
+        }
+        check_cancel(cancel)?;
+        let width = self.geometry.width;
+        if state.layer_means.len() != self.geometry.layers
+            || state.quantized_hidden.len() != width
+            || state.layer_means.iter().any(|layer| layer.len() != width)
+            || state
+                .quantized_hidden
+                .iter()
+                .any(|value| !value.is_finite())
+            || state
+                .layer_means
+                .iter()
+                .any(|layer| layer.iter().any(|value| !value.is_finite()))
+        {
+            return Err(Error::Request("non-finite layer readout".into()));
+        }
+        Ok(LayerReadout {
+            layers: state.layer_means,
+            quantized_hidden: state.quantized_hidden,
+        })
     }
 
     fn check_request(
@@ -872,6 +926,9 @@ impl Model {
 
     fn step(&self, token: u32, state: &mut State, cancel: &CancellationToken) -> Result<Vec<f32>> {
         check_cancel(cancel)?;
+        if state.capture_layers {
+            state.layer_means.clear();
+        }
         let g = &self.geometry;
         let d = g.width;
         let n = g.lanes;
@@ -949,6 +1006,13 @@ impl Model {
                 }
             }
             stream = next;
+            if state.capture_layers {
+                let mut mean = vec![0.0; d];
+                for i in 0..d {
+                    mean[i] = (0..n).map(|lane| stream[lane * d + i]).sum::<f32>() / n as f32;
+                }
+                state.layer_means.push(mean);
+            }
             if state.collect_cells {
                 for i in 0..d {
                     cells.push((0..n).map(|lane| stream[lane * d + i]).sum::<f32>() / n as f32);
@@ -963,6 +1027,9 @@ impl Model {
         }
         let mut hidden = norm(&hidden, &self.flat(self.final_norm)?);
         quant(&mut hidden);
+        if state.capture_layers {
+            state.quantized_hidden.clone_from(&hidden);
+        }
         let logits = self.linear_tensor(&self.weights[0].narrow(0, 0, g.out_vocab)?, &hidden)?;
         if logits.iter().any(|v| !v.is_finite()) {
             return Err(Error::Request("non-finite model output".into()));

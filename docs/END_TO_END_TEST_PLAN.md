@@ -19,7 +19,7 @@ Akis 是基于 Power embedded inference 的模型 crate。目标是证明从模�
 | --- | --- | --- | --- |
 | Needle 3 `.cact` | 容器解析、CQ 解码、F32 CPU 权重 | 真实 581 张量工件加载；截断与部分非法输入单测 | 全格式组合、模糊测试、峰值内存 |
 | 分词 | 内嵌 BPE、特殊 token、byte fallback | 合成单测；3 条真实输入与上游 token IDs 一致 | 全 Unicode 与多语言差分 |
-| 模型前向 | GQA、卷积、engram、Monarch、mHC、A8 数值模拟 | 9 条 JAX 差分，含 255/256/257 与 1023/1024/1025 token，top-1 相同 | 多样长文本、最大上下文、逐层误差、跨平台 |
+| 模型前向 | GQA、卷积、engram、Monarch、mHC、A8 数值模拟 | 保留的 9 条边界差分仍在；同一入口另有 1280/1536/2048 token、20 层逐层 lane mean、激活量化最终隐藏，以及重测的 1025 token，top-1 相同 | 最大上下文 8192、第二层深、原生行为兼容、跨平台 |
 | 生成与工具调用 | 贪心生成、schema 子集约束、返回前复核 | 真实进程测试 13/17，通过与失败全部留存；grammar 单测 | 中文、否定、缺参数失败；全场景语义、批量与多轮 |
 | 置信度 | 原始 head sigmoid 与 token 概率分开返回 | 字段存在；无 head 不伪造值 | 官方最终 confidence 等价、业务校准 |
 | Embedding | embedding head 或 confidence probe pool | confidence pool 3072 维归一化/确定性；JAX cosine 0.99991 | 检索质量、原生引擎返回契约及 embedding-head 工件差分 |
@@ -246,6 +246,10 @@ OUTCOME 写清通过/失败/阻塞/未执行的数量，以及“明确不宣称
 不代表 Power 自动审计了每一个中间分配。状态估算、head pooling 和 grammar 内存必须
 通过峰值测量与极限用例证明。目前已补缓冲区预算并实测 1025-token logits 请求峰值
 RSS 约 717MB → 536MB；这不构成整个操作系统 RSS 上限或所有输入的分配证明。
+2026-10-14 的数值切片在同一 parity 入口增加 1280、1536 和 2048 token、20 层逐层误差和激活量化对照。
+2048 token 的 logits 请求在既有状态预算内完成，冷进程峰值 RSS 为 536,690,688 字节，
+与保留的 1025-token 样本 536,035,328 字节并列。最大上下文、第二层深和跨平台仍未证明。
+这不是 G1 完成，也不是 Needle 替换认证。
 Unix CLI 已把 `SIGINT` 与 `SIGTERM` 接到进程取消标志。第一次信号请求取消，
 第二次相同信号恢复默认终止。`A3S_AKIS_SIGNAL_READY_FILE` 只是进程测试的同步屏障，
 设置后命令在信号到达前等待，然后仍走正常失败路径；未设置时 CLI 不会等待。

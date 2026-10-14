@@ -1,0 +1,32 @@
+{"case": "hello", "cosine": 0.9999833703041077, "max_absolute_error": 0.30045413970947266, "top1_agreement": true, "reference_top": 8110, "akis_top": 8110, "tokens": 3}
+{"case": "zh-lights", "cosine": 0.9999954700469971, "max_absolute_error": 0.1617727279663086, "top1_agreement": true, "reference_top": 257, "akis_top": 257, "tokens": 31}
+{"case": "tool-prompt", "cosine": 0.9999985098838806, "max_absolute_error": 0.14938926696777344, "top1_agreement": true, "reference_top": 6, "akis_top": 6, "tokens": 59}
+{"case": "layer-00", "cosine": 1.0000001192092896, "max_absolute_error": 0.001373291015625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-01", "cosine": 1.0000001192092896, "max_absolute_error": 0.001373291015625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-02", "cosine": 0.9999998211860657, "max_absolute_error": 0.00140380859375, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-03", "cosine": 0.9999999403953552, "max_absolute_error": 0.0015869140625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-04", "cosine": 1.0, "max_absolute_error": 0.00177001953125, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-05", "cosine": 0.9999998807907104, "max_absolute_error": 2.2901763916015625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-06", "cosine": 0.9999966621398926, "max_absolute_error": 7.88397216796875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-07", "cosine": 0.9999949336051941, "max_absolute_error": 10.19140625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-08", "cosine": 0.9999920129776001, "max_absolute_error": 17.4365234375, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-09", "cosine": 0.9999811053276062, "max_absolute_error": 22.507797241210938, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-10", "cosine": 0.9999773502349854, "max_absolute_error": 27.9271240234375, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-11", "cosine": 0.9999626874923706, "max_absolute_error": 30.88458251953125, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-12", "cosine": 0.9999523162841797, "max_absolute_error": 34.413665771484375, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-13", "cosine": 0.9999310374259949, "max_absolute_error": 34.8563232421875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-14", "cosine": 0.9998737573623657, "max_absolute_error": 57.1043701171875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-15", "cosine": 0.999851644039154, "max_absolute_error": 72.451171875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-16", "cosine": 0.99980628490448, "max_absolute_error": 205.994140625, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-17", "cosine": 0.9997826218605042, "max_absolute_error": 306.18359375, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-18", "cosine": 0.9997641444206238, "max_absolute_error": 297.26171875, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "layer-19", "cosine": 0.9999998807907104, "max_absolute_error": 175250.0, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "tokens": 3}
+{"case": "quantization-activation", "cosine": 0.9992085695266724, "max_absolute_error": 0.00043571414425969124, "top1_agreement": true, "reference_top": 246, "akis_top": 246, "tokens": 3}
+{"case": "quantization-logits", "cosine": 1.0, "max_absolute_error": 0.000102996826171875, "top1_agreement": true, "reference_top": 8099, "akis_top": 8099, "tokens": 2, "float_path_max_absolute_error": 0.2731361389160156, "float_path_top1_agreement": true}
+{"case": "confidence-pool-embedding", "cosine": 0.9999085068702698, "max_absolute_error": 0.002929985523223877, "top1_agreement": true, "reference_top": 645, "akis_top": 645, "dimensions": 3072}
+{"case": "confidence-head", "reference": 0.24422524869441986, "akis": 0.244088, "absolute_error": 0.00013724869441986143, "top1_agreement": true}
+{"case": "long-1280-think", "cosine": 0.9999987483024597, "max_absolute_error": 0.20834732055664062, "top1_agreement": true, "reference_top": 38, "akis_top": 38, "tokens": 1280}
+{"case": "long-1536-tool-call", "cosine": 0.999995768070221, "max_absolute_error": 0.1585855484008789, "top1_agreement": true, "reference_top": 10, "akis_top": 10, "tokens": 1536}
+{"case": "long-2048-user", "cosine": 0.9999989867210388, "max_absolute_error": 0.14422225952148438, "top1_agreement": true, "reference_top": 410, "akis_top": 410, "tokens": 2048, "maximum_resident_bytes": 536690688, "seconds": 25.74454175005667, "retained_1025_token_peak_rss_bytes": 536035328}
+{"case": "budget-1025-think", "cosine": 0.9999979734420776, "max_absolute_error": 0.4992523193359375, "top1_agreement": true, "reference_top": 38, "akis_top": 38, "tokens": 1025, "maximum_resident_bytes": 536051712, "seconds": 13.753121124987956, "retained_1025_token_peak_rss_bytes": 536035328}
+{"passed": 31}

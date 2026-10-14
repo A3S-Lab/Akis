@@ -103,6 +103,11 @@ and a measured 25% cold-process RSS reduction for a 1025-token logits request.
 The [signal checkpoint](docs/evidence/akis/20261014-signals/OUTCOME.md) wires
 Unix process signals into those checkpoints and proves grammar, head and
 pre-return cancellation discard the result.
+The [parity checkpoint](docs/evidence/akis/20261014-parity/OUTCOME.md) adds
+1280/1536/2048-token comparisons, a per-layer lane-mean error, and the
+activation-quantization path on the pinned artifact. The 2048-token request
+completed inside the existing state budget. Full G1 and a Needle replacement
+are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

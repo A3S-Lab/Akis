@@ -9,7 +9,7 @@ mod tokenizer;
 pub use a3s_power::inference::{DevicePreference, EmbeddedRuntime, InferenceLimits};
 pub use archive::{Archive, Geometry};
 pub use error::{Error, Result};
-pub use model::{process_stop_requested, request_process_stop, Generation, Model};
+pub use model::{process_stop_requested, request_process_stop, Generation, LayerReadout, Model};
 pub use structured::{Completion, Tool, ToolCall};
 pub use tokenizer::Tokenizer;
 pub use tokio_util::sync::CancellationToken;

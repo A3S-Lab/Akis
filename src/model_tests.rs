@@ -261,6 +261,30 @@ fn head_cancellation_does_not_return_a_score() {
 }
 
 #[test]
+fn layer_readout_reports_every_layer_and_rejects_cancellation() {
+    let m = model(InferenceLimits::default());
+    let cancel = CancellationToken::new();
+    let readout = m.layer_readout(&[2, 5, 4], &cancel).unwrap();
+    assert_eq!(readout.layers.len(), m.geometry.layers);
+    assert!(readout
+        .layers
+        .iter()
+        .all(|layer| layer.len() == m.geometry.width));
+    assert_eq!(readout.quantized_hidden.len(), m.geometry.width);
+    assert!(readout
+        .quantized_hidden
+        .iter()
+        .all(|value| value.is_finite()));
+    let again = m.layer_readout(&[2, 5, 4], &cancel).unwrap();
+    assert_eq!(readout.layers, again.layers);
+    assert_eq!(readout.quantized_hidden, again.quantized_hidden);
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    assert_cancelled(m.layer_readout(&[2, 5, 4], &cancel).unwrap_err());
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+}
+
+#[test]
 fn cancellation_before_return_discards_the_generation() {
     let _arm = crate::test_support::arm("before-return");
     let m = model(InferenceLimits::default());
