@@ -349,6 +349,11 @@ load Hadamard 2 with a length-2 permutation. Hadamard 4 opens and is then
 rejected because that permutation is still length 2. The campaign remains
 14 passed and 3 failed. A Needle replacement is not certified.
 
+The [probe output checks](docs/evidence/akis/20261014-probe-output/OUTCOME.md)
+embed one finite value from a code-1 probe. A finite embedding of 1 with a
+finite but overflowing direction is rejected. The campaign remains 14 passed
+and 3 failed. A Needle replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

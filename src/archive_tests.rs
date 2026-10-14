@@ -1067,3 +1067,42 @@ fn permutation_length_must_match_hadamard() {
         }
     }
 }
+
+fn fill_f32(archive: &mut Archive, index: usize, value: f32) {
+    let record = &archive.records[index];
+    let at = record.offset;
+    let bytes = record.bytes;
+    for offset in (at..at + bytes).step_by(4) {
+        archive.data[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+#[test]
+fn embedding_probe_accepts_a_finite_vector_and_rejects_a_non_finite_one() {
+    let mut finite = parse_archive(fixture()).unwrap();
+    push_probe(&mut finite, 1.0, 2, 1);
+    let model = load_cpu(finite).unwrap();
+    let embedding = model.embed("hi", &crate::CancellationToken::new()).unwrap();
+    assert_eq!(embedding.len(), 1);
+    assert!(embedding.iter().all(|value| value.is_finite()));
+
+    let mut huge = parse_archive(fixture()).unwrap();
+    push_probe(&mut huge, 1.0, 2, 1);
+    let direction = huge.records.len() - 7;
+    assert_eq!(huge.records[0].shape, [10, 2]);
+    assert_eq!(huge.records[direction].shape, [2, 2]);
+    assert_eq!(huge.records[huge.records.len() - 8].shape, [1]);
+    fill_f32(&mut huge, 0, 1.0);
+    fill_f32(&mut huge, direction, f32::MAX);
+    let model = load_cpu(huge).unwrap();
+    match model.embed("hi", &crate::CancellationToken::new()) {
+        Ok(values) => panic!("finite probe embedded: {values:?}"),
+        Err(error) => {
+            let text = error.to_string();
+            println!("observed rejection: {text}");
+            assert!(text.contains("non-finite probe output"), "{text}");
+            assert!(!text.contains("non-finite embedding head"), "{text}");
+            assert!(!text.contains("non-finite tensor"), "{text}");
+        }
+    }
+}

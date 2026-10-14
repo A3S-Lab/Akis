@@ -377,6 +377,8 @@ hello、256-token `<think>` 和 2048-token `user` 的 logits 相对上一版最�
 
 随后，合成工件的 Hadamard 为 2 且置换长度为 2 时可以加载。把头里的 Hadamard 改成 4，档案仍能打开，随后加载被拒绝，错误是 `permutation shape mismatch`。错误文本不含 `invalid Hadamard permutation`，也不含 `invalid model geometry`。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。63 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
 
+随后，合成工件上 code 为 1 的探针，权重有限时，`embed` 返回一个有限值。把嵌入改成有限的 `1`，并把探针方向改成有限但会溢出的最大有限值，加载仍然成功，`embed` 被拒绝，错误是 `non-finite probe output`。错误文本不含 `non-finite embedding head`，也不含 `non-finite tensor`。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。64 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
+
 ## 10. 扩展轨道的额外出口
 
 - **训练/量化/导出**：固定 seed 的小数据训练、loss 与 held-out 质量、训练→导出→
