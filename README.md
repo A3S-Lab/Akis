@@ -272,6 +272,12 @@ one byte or one token past that limit. Production limits are unchanged. The
 campaign remains 14 passed and 3 failed. A Needle replacement is not
 certified.
 
+The [admission checks](docs/evidence/akis/20261014-admission/OUTCOME.md) reject
+a second request while one permit is held, including during an in-flight
+forward. A cap of two accepts two permits and rejects the third. A failed
+request can run again. The campaign remains 14 passed and 3 failed. A Needle
+replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

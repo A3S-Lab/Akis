@@ -1045,3 +1045,92 @@ fn kron_matches_the_scalar_triple_loop_on_every_lane() {
         assert_eq!(found, expect, "na {na} nb {nb}");
     }
 }
+
+fn assert_admission(runtime: &EmbeddedRuntime, active: usize, limit: usize) {
+    let snapshot = runtime.admission_snapshot();
+    assert_eq!(snapshot.active, active);
+    assert_eq!(snapshot.waiting, 0);
+    assert_eq!(snapshot.active_limit, Some(limit));
+}
+
+#[test]
+fn one_extra_request_is_rejected_while_a_permit_is_held() {
+    let cancel = CancellationToken::new();
+    let tokens = [2u32, 5, 4];
+    let m = model(InferenceLimits::default());
+    let stopped = CancellationToken::new();
+    stopped.cancel();
+    assert_cancelled(m.logits(&[2], &stopped).unwrap_err());
+    assert_admission(&m.runtime, 0, 1);
+
+    let first = m.logits(&tokens, &cancel).unwrap();
+    assert_admission(&m.runtime, 0, 1);
+    let held = m.runtime.begin(&cancel).unwrap();
+    assert_admission(&m.runtime, 1, 1);
+    let blocked = m.logits(&tokens, &cancel).unwrap_err();
+    assert!(
+        blocked.to_string().contains("already has 1 active"),
+        "{blocked}"
+    );
+    assert_admission(&m.runtime, 1, 1);
+    drop(held);
+    assert_admission(&m.runtime, 0, 1);
+    assert!(m.logits(&[], &cancel).is_err());
+    assert_admission(&m.runtime, 0, 1);
+    assert_eq!(m.logits(&tokens, &cancel).unwrap(), first);
+
+    let paired = model(InferenceLimits {
+        max_concurrent_requests: 2,
+        ..InferenceLimits::default()
+    });
+    let first_permit = paired.runtime.begin(&cancel).unwrap();
+    let second_permit = paired.runtime.begin(&cancel).unwrap();
+    assert_admission(&paired.runtime, 2, 2);
+    let third = paired.logits(&tokens, &cancel).unwrap_err();
+    assert!(
+        third.to_string().contains("already has 2 active"),
+        "{third}"
+    );
+    assert_admission(&paired.runtime, 2, 2);
+    drop(first_permit);
+    assert_admission(&paired.runtime, 1, 2);
+    assert_eq!(paired.logits(&tokens, &cancel).unwrap(), first);
+    assert_admission(&paired.runtime, 1, 2);
+    drop(second_permit);
+    assert_admission(&paired.runtime, 0, 2);
+
+    let mut bytes = crate::test_support::fixture();
+    bytes[13 * 4..14 * 4].copy_from_slice(&4096u32.to_le_bytes());
+    let limits = InferenceLimits::default();
+    let running = Model::load(
+        Archive::from_bytes(bytes, &limits).unwrap(),
+        EmbeddedRuntime::new(DevicePreference::Cpu, limits).unwrap(),
+    )
+    .unwrap();
+    let cancel_running = CancellationToken::new();
+    std::thread::scope(|scope| {
+        let worker = scope.spawn(|| running.logits(&[4; 4096], &cancel_running));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while running.runtime.admission_snapshot().active == 0 {
+            assert!(
+                !worker.is_finished(),
+                "forward ended before the second request"
+            );
+            assert!(
+                std::time::Instant::now() < deadline,
+                "request never admitted"
+            );
+            std::thread::yield_now();
+        }
+        let overlapped = running.logits(&[2], &CancellationToken::new()).unwrap_err();
+        assert!(
+            overlapped.to_string().contains("already has 1 active"),
+            "{overlapped}"
+        );
+        assert_admission(&running.runtime, 1, 1);
+        cancel_running.cancel();
+        assert_cancelled(worker.join().unwrap().unwrap_err());
+    });
+    assert_admission(&running.runtime, 0, 1);
+    assert!(running.logits(&[4], &CancellationToken::new()).is_ok());
+}
