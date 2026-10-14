@@ -128,6 +128,11 @@ logits sample is 13.200 seconds beside the previous 13.406 seconds. That
 difference sits inside one cold-sample variation, and the factor product
 stops there. Cold RSS stays beside the 272,285,696-byte sample. Packed CQ
 GEMM and a Needle replacement are not certified.
+The [allocation map](docs/evidence/akis/20261014-allocation-map/OUTCOME.md)
+lists the vectors rebuilt on each token. A 4-second sample puts `flat` and
+`to_vec1` under the cache bar, so no second copy was added. `gemm_basic`
+remains the top leaf. Packed CQ GEMM and a Needle replacement are not
+certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

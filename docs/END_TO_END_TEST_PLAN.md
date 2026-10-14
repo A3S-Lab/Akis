@@ -264,6 +264,9 @@ hello 与 256-token logits 相对上一版的最大绝对误差为 0。余弦仍
 上一版同一请求是 6.934 秒和 13.406 秒。2048-token 样本相差 0.206 秒，落在单次冷样本波动里。
 证据记下这个样本，因子乘积到此停止。hello 与 256-token logits 相对上一版的最大绝对误差为 0。
 余弦仍高于 0.999，top-1 相同。驻留内存仍在 272,285,696 字节旁边。
+随后的分配图覆盖 `step`、`attention`、`mlp`、`kron` 和 gemv 上每个 token 重建的向量。
+同一二进制上对 1025-token logits 采样 4 秒，`logits` 3114 次，`flat` 51 次，`to_vec1` 52 次。
+秩 1 缩放没有越过缓存线，所以没有第二份拷贝。`gemm_basic` 是栈顶最多的叶子，1781 次。
 最大上下文、第二层深、packed GEMM 和跨平台仍未证明。这不是 G1 或 G4 完成，也不是 Needle 替换认证。
 Unix CLI 已把 `SIGINT` 与 `SIGTERM` 接到进程取消标志。第一次信号请求取消，
 第二次相同信号恢复默认终止。`A3S_AKIS_SIGNAL_READY_FILE` 只是进程测试的同步屏障，
