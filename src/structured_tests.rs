@@ -1,6 +1,7 @@
 #![cfg(test)]
 use super::*;
-use serde_json::json;
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
 #[test]
 fn grammar_accepts_valid_prefixes_and_rejects_wrong_values() {
     let schema=Schema::parse(&json!({"type":"object","properties":{"room":{"type":"string","enum":["kitchen","bedroom"]},"on":{"type":"boolean"}},"required":["room","on"]}),0).unwrap();
@@ -241,4 +242,63 @@ fn tool_metadata_is_bounded_before_schema_cloning() {
         "{error}"
     );
     assert_eq!(model.runtime().admission_snapshot().active, 0);
+}
+
+fn lights(room: &str, on: bool) -> ToolCall {
+    ToolCall {
+        name: "set_lights".into(),
+        arguments: BTreeMap::from([
+            ("on".into(), Value::Bool(on)),
+            ("room".into(), Value::String(room.into())),
+        ]),
+    }
+}
+
+#[test]
+fn string_arguments_must_occur_in_the_user_input() {
+    let rows = [
+        ("turn on the kitchen lights", Some(("kitchen", true)), false),
+        ("turn off the bedroom lights", Some(("bedroom", false)), false),
+        ("打开厨房的灯。", None, false),
+        ("关闭客厅的灯。", None, false),
+        ("What is the capital of France?", None, false),
+        ("Do not turn on the kitchen lights.", Some(("kitchen", false)), false),
+        ("Turn on the lights.", Some(("living room", true)), true),
+        (
+            "Translate the sentence 'turn on the kitchen lights' into French. Do not operate any lights.",
+            None,
+            false,
+        ),
+    ];
+    for (input, call, suppress) in rows {
+        let calls = call
+            .map(|(room, on)| vec![lights(room, on)])
+            .unwrap_or_default();
+        let (kept, suppressed, ungrounded) = ground_string_arguments(input, calls);
+        if suppress {
+            assert!(kept.is_empty(), "{input}");
+            assert_eq!(suppressed.len(), 1, "{input}");
+            assert_eq!(ungrounded, vec!["set_lights.room".to_string()], "{input}");
+        } else {
+            assert!(suppressed.is_empty(), "{input}");
+            assert!(ungrounded.is_empty(), "{input}");
+            assert_eq!(kept.len(), if call.is_some() { 1 } else { 0 }, "{input}");
+        }
+    }
+    let (kept, suppressed, ungrounded) = ground_string_arguments(
+        "Turn on the living room lights.",
+        vec![lights("living room", true)],
+    );
+    assert_eq!(kept.len(), 1);
+    assert!(suppressed.is_empty());
+    assert!(ungrounded.is_empty());
+    let (kept, suppressed, ungrounded) =
+        ground_string_arguments("turn on the kitchen lights", vec![lights("Kitchen", true)]);
+    assert!(kept.is_empty());
+    assert_eq!(ungrounded, vec!["set_lights.room".to_string()]);
+    assert_eq!(suppressed.len(), 1);
+    let (kept, _, ungrounded) =
+        ground_string_arguments("turn on the kitchen lights", vec![lights("", true)]);
+    assert!(kept.is_empty());
+    assert_eq!(ungrounded, vec!["set_lights.room".to_string()]);
 }

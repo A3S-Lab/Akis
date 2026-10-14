@@ -1,0 +1,15 @@
+{
+  "parent_commit": "a2000be8c825b664f2b1774270716f0886b6107e",
+  "date": "2026-10-14 Asia/Shanghai",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "power_rev": "830760cb9dc169893e0f9ba9e91ac5399c14d485",
+  "hashes": {
+    "target/release/a3s-akis": "9cc7f01369941ec446f78659e2b4335aab0f3abfce509c9a3369fb643ca6cfcb",
+    ".cache/needle3.cact": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+    ".cache/libneedle3.dylib": "993d617e1136d644560c1fe59058e40810b9386645d01d2f6472af042f4c72ec",
+    "Cargo.lock": "60f3af39d03331f2e41c69751add8992461bc31b8bfb4232feb0ae0b925ef44b",
+    "tests/e2e/cases/tool_calls.json": "fce6550d61d2b3041cd4bcd4d19605366bbea6585a5d0bd9ba19a4adbb04c6ef",
+    "tests/e2e/cases/needle_engine.json": "429f4940cc444f0da695d2f810dd348b69304740e7d211cef3ebb4449f82ec25"
+  },
+  "note": "Exact-span grounding. Needle envelope 8/8. Quality campaign 14 passed and 3 failed. Expectations were not edited."
+}

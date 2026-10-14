@@ -215,6 +215,12 @@ compares the eight tool inputs with the pinned native calls. Seven match.
 so the quality campaign remains 13 passed and 4 failed. Native behavioral
 compatibility and a Needle replacement are not certified.
 
+The [string span](docs/evidence/akis/20261014-string-span/OUTCOME.md) keeps a
+call only when every string argument occurs in the user input. The eight
+frozen native envelopes match, including `missing-room`. The kitchen-light
+head score remains 0.8660065. The quality campaign is 14 passed and 3 failed.
+Chinese action and negation remain. A Needle replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

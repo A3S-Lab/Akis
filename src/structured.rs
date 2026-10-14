@@ -52,7 +52,39 @@ pub struct ToolCall {
 #[derive(Debug, Serialize)]
 pub struct Completion {
     pub function_calls: Vec<ToolCall>,
+    pub suppressed_calls: Vec<ToolCall>,
+    /// `tool.field` paths whose string values are absent from the user input.
+    pub ungrounded: Vec<String>,
     pub generation: Generation,
+}
+
+/// Keep a call only when every string argument occurs as a contiguous span of
+/// `input`. Other argument types are left to the schema. An empty string is
+/// absent. This check does not invent a value or fold case.
+pub(crate) fn ground_string_arguments(
+    input: &str,
+    calls: Vec<ToolCall>,
+) -> (Vec<ToolCall>, Vec<ToolCall>, Vec<String>) {
+    let mut kept = Vec::new();
+    let mut suppressed = Vec::new();
+    let mut ungrounded = Vec::new();
+    for call in calls {
+        let mut missing = Vec::new();
+        for (field, value) in &call.arguments {
+            if let Value::String(text) = value {
+                if text.is_empty() || !input.contains(text.as_str()) {
+                    missing.push(format!("{}.{}", call.name, field));
+                }
+            }
+        }
+        if missing.is_empty() {
+            kept.push(call);
+        } else {
+            ungrounded.extend(missing);
+            suppressed.push(call);
+        }
+    }
+    (kept, suppressed, ungrounded)
 }
 
 #[derive(Clone, Debug)]
@@ -453,10 +485,13 @@ impl Model {
                 "tool call violates the declared schema".into(),
             ));
         }
-        let function_calls = serde_json::from_slice(&body)?;
+        let parsed = serde_json::from_slice(&body)?;
         crate::model::check_cancel(cancel)?;
+        let (function_calls, suppressed_calls, ungrounded) = ground_string_arguments(input, parsed);
         Ok(Completion {
             function_calls,
+            suppressed_calls,
+            ungrounded,
             generation,
         })
     }
