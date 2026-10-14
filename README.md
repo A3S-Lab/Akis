@@ -291,6 +291,13 @@ no signature or attestation. A cancelled complete writes empty stdout. The
 campaign remains 14 passed and 3 failed. A Needle replacement is not
 certified.
 
+The [byte token checks](docs/evidence/akis/20261014-byte-tokens/OUTCOME.md)
+restore a UTF-8 scalar that is missing from the vocabulary when all 256 byte
+tokens are present. The same scalar becomes the unknown token when byte
+fallback is off. Adjacent special markers stay separate token ids. An id at
+the piece count is rejected. The campaign remains 14 passed and 3 failed. A
+Needle replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

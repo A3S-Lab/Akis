@@ -160,3 +160,220 @@ fn tokenizer_bytes_accept_the_exact_limit() {
         "{state_error}"
     );
 }
+
+fn byte_piece(byte: u8) -> String {
+    if byte == 0x0a {
+        "<0x0a>".to_string()
+    } else {
+        format!("<0x{byte:02X}>")
+    }
+}
+
+fn control_pieces(short_marker: bool) -> Vec<(String, u8)> {
+    let mut pieces = vec![
+        ("<pad>".to_string(), 2),
+        ("</s>".to_string(), 2),
+        ("<s>".to_string(), 2),
+        ("<unk>".to_string(), 1),
+        ("▁".to_string(), 0),
+        ("你".to_string(), 0),
+        ("<tool_call>".to_string(), 3),
+        ("</tool_call>".to_string(), 3),
+    ];
+    if short_marker {
+        pieces.push(("<tool_".to_string(), 3));
+    }
+    pieces
+}
+
+fn add_byte_pieces(pieces: &mut Vec<(String, u8)>, count: usize) {
+    for byte in 0..count {
+        pieces.push((byte_piece(byte as u8), 4));
+    }
+}
+
+fn piece_blob(pieces: &[(String, u8)], dummy: u8, fallback: u8) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for value in [pieces.len() as u32, 0, 1, 2, 3] {
+        bytes.extend(value.to_le_bytes());
+    }
+    bytes.extend([dummy, fallback, 0, 0]);
+    for (index, (piece, kind)) in pieces.iter().enumerate() {
+        bytes.extend((index as f32).to_le_bytes());
+        bytes.push(*kind);
+        bytes.extend((piece.len() as u16).to_le_bytes());
+        bytes.extend(piece.as_bytes());
+    }
+    bytes
+}
+
+fn load(pieces: &[(String, u8)], dummy: u8, fallback: u8) -> Result<Tokenizer> {
+    Tokenizer::from_bytes(&piece_blob(pieces, dummy, fallback), pieces.len())
+}
+
+fn must_err(result: Result<Tokenizer>) -> Error {
+    match result {
+        Ok(_) => panic!("tokenizer load returned a value"),
+        Err(error) => error,
+    }
+}
+
+fn raw_bytes(tok: &Tokenizer, ids: &[u32]) -> Vec<u8> {
+    let mut raw = Vec::new();
+    for id in ids {
+        raw.extend(tok.token_bytes(*id).unwrap());
+    }
+    raw
+}
+
+fn assert_roundtrip(tok: &Tokenizer, text: &str) {
+    let ids = tok.encode(text);
+    assert_eq!(tok.decode(&ids).unwrap(), text, "{text:?} {ids:?}");
+}
+
+#[test]
+fn byte_tokens_restore_split_utf8_and_reject_unknown_ids() {
+    let mut pieces = control_pieces(true);
+    add_byte_pieces(&mut pieces, 256);
+    let tok = load(&pieces, 0, 1).unwrap();
+    let mut joined = Vec::new();
+    for byte in 0..=255u8 {
+        let id = tok.token_id(&byte_piece(byte)).unwrap();
+        let raw = tok.token_bytes(id).unwrap();
+        assert_eq!(raw, vec![byte], "{byte}");
+        joined.extend(raw);
+    }
+    assert_eq!(joined, (0..=255).collect::<Vec<u8>>());
+
+    for text in [
+        "🦀",
+        "Aé€",
+        "\0",
+        "\n",
+        "你",
+        "你🦀",
+        "<tool_call></tool_call>",
+        "<tool_call>🦀</tool_call>",
+        "</tool_call><tool_call><tool_",
+    ] {
+        assert_roundtrip(&tok, text);
+        assert_eq!(raw_bytes(&tok, &tok.encode(text)), text.as_bytes());
+    }
+    assert_eq!(tok.encode("你"), vec![tok.token_id("你").unwrap()]);
+    let crab = tok.encode("🦀");
+    assert_eq!(crab.len(), "🦀".len());
+    assert_eq!(raw_bytes(&tok, &crab), "🦀".as_bytes());
+    assert_eq!(
+        tok.encode("<tool_call>"),
+        vec![tok.token_id("<tool_call>").unwrap()]
+    );
+    assert!(!tok
+        .encode("<tool_call>")
+        .contains(&tok.token_id("<tool_").unwrap()));
+    assert_eq!(
+        tok.encode("</tool_call><tool_call><tool_"),
+        vec![
+            tok.token_id("</tool_call>").unwrap(),
+            tok.token_id("<tool_call>").unwrap(),
+            tok.token_id("<tool_").unwrap(),
+        ]
+    );
+
+    let dummy = load(&pieces, 1, 1).unwrap();
+    for text in ["🦀", "Aé€", "\0", "\n", "你🦀", "<tool_call>🦀</tool_call>"] {
+        assert_roundtrip(&dummy, text);
+    }
+    let marked = dummy.encode("<tool_call></tool_call>");
+    assert_eq!(
+        &marked[1..],
+        &[
+            dummy.token_id("<tool_call>").unwrap(),
+            dummy.token_id("</tool_call>").unwrap(),
+        ]
+    );
+    assert_eq!(dummy.decode(&marked).unwrap(), "<tool_call></tool_call>");
+
+    let plain = load(&control_pieces(false), 0, 0).unwrap();
+    assert_eq!(plain.unk, plain.token_id("<unk>").unwrap());
+    assert_eq!(plain.encode("🦀"), vec![plain.unk]);
+    assert_eq!(plain.encode("Aé"), vec![plain.unk, plain.unk]);
+    assert_eq!(plain.decode(&plain.encode("🦀")).unwrap(), "");
+    let mixed = plain.encode("你🦀");
+    assert_eq!(mixed, vec![plain.token_id("你").unwrap(), plain.unk]);
+    assert_eq!(plain.decode(&mixed).unwrap(), "你");
+    assert_eq!(
+        plain.encode("<tool_call></tool_call>"),
+        vec![
+            plain.token_id("<tool_call>").unwrap(),
+            plain.token_id("</tool_call>").unwrap(),
+        ]
+    );
+    assert_eq!(
+        plain
+            .decode(&plain.encode("<tool_call></tool_call>"))
+            .unwrap(),
+        "<tool_call></tool_call>"
+    );
+
+    let width = tok.vocab_size() as u32;
+    let outside = tok.decode(&[width]).unwrap_err();
+    assert!(
+        outside.to_string().contains("token id outside vocabulary"),
+        "{outside}"
+    );
+    let middle = tok
+        .decode(&[tok.token_id("你").unwrap(), width])
+        .unwrap_err();
+    assert!(
+        middle.to_string().contains("token id outside vocabulary"),
+        "{middle}"
+    );
+    assert_eq!(tok.token_bytes(width - 1).unwrap(), vec![0xFF]);
+    assert!(tok.token_bytes(width).is_err());
+    assert!(tok.token_bytes(u32::MAX).is_err());
+    let lone = tok
+        .decode(&[tok.token_id(&byte_piece(0xFF)).unwrap()])
+        .unwrap();
+    assert_ne!(lone.as_bytes(), &[0xFF]);
+
+    let mut short = control_pieces(false);
+    add_byte_pieces(&mut short, 255);
+    let short_error = must_err(load(&short, 0, 1));
+    assert!(
+        short_error.to_string().contains("malformed SentencePiece"),
+        "{short_error}"
+    );
+    let mut duplicate = control_pieces(false);
+    add_byte_pieces(&mut duplicate, 256);
+    duplicate.push(("<0x00>".to_string(), 4));
+    let duplicate_error = must_err(load(&duplicate, 0, 0));
+    assert!(
+        duplicate_error
+            .to_string()
+            .contains("malformed SentencePiece"),
+        "{duplicate_error}"
+    );
+    let mut malformed = control_pieces(false);
+    malformed.push(("<0xGG>".to_string(), 4));
+    let malformed_error = must_err(load(&malformed, 0, 0));
+    assert!(
+        malformed_error
+            .to_string()
+            .contains("malformed SentencePiece"),
+        "{malformed_error}"
+    );
+    let mut truncated = control_pieces(false);
+    truncated.push(("<0x0>".to_string(), 4));
+    let truncated_error = must_err(load(&truncated, 0, 0));
+    assert!(
+        truncated_error
+            .to_string()
+            .contains("malformed SentencePiece"),
+        "{truncated_error}"
+    );
+    let missing = must_err(load(&control_pieces(false), 0, 1));
+    assert!(
+        missing.to_string().contains("malformed SentencePiece"),
+        "{missing}"
+    );
+}

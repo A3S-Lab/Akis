@@ -1,0 +1,281 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src/lib.rs (target/debug/deps/a3s_akis-148de2fd2fa3bd2e)
+
+running 56 tests
+test math::tests::stable_softmax_and_quantization ... ok
+test archive::tests::hadamard_is_orthonormal ... ok
+test math::tests::split_half_rope_is_a_rotation ... ok
+test math::tests::sinkhorn_preserves_both_marginals ... ok
+test math::tests::axpy_matches_one_multiply_and_one_add_per_element ... ok
+test archive::tests::directories_and_over_budget_artifacts_are_rejected ... ok
+test model::tests::key_spans_follow_the_cache_deque ... ok
+test model::tests::kron_matches_the_scalar_triple_loop_on_every_lane ... ok
+test archive::tests::tokenizer_matches_known_bpe_and_marker_boundaries ... ok
+test model::tests::complete_projections_stay_in_matmul_order_and_keep_archive_rows ... ok
+test archive::tests::rejects_overlap_unknown_format_and_non_finite_weights ... ok
+test model::tests::batched_value_mix_matches_each_scaled_add ... ok
+test model::tests::batched_projection_matches_each_row_product ... ok
+test model::tests::cancellation_during_forward_releases_the_power_permit ... ok
+test model::tests::batched_attention_scores_match_each_query_dot ... ok
+test model::tests::cancellation_before_return_discards_the_generation ... ok
+test model::tests::cancellation_limits_and_admission_fail_closed ... ok
+test model::tests::head_cancellation_does_not_return_a_score ... ok
+test model::tests::deterministic_forward_has_isolated_state ... ok
+test model::tests::layer_readout_reports_every_layer_and_rejects_cancellation ... ok
+test model::tests::no_head_does_not_invent_confidence ... ok
+test model::tests::overflowing_head_arithmetic_is_an_error_instead_of_a_success_score ... ok
+test model::tests::transpose_out_in_matches_the_index_permutation ... ok
+test model::tests::short_and_narrow_prompts_stay_on_the_token_loop ... ok
+test model::tests::probe_pooling_is_included_in_the_state_budget ... ok
+test model::tests::tokenization_obeys_the_power_state_budget_before_forward ... ok
+test structured::tests::arrays_and_escaped_strings ... ok
+test structured::tests::framing_uses_marker_ids_instead_of_splitting_argument_text ... ok
+test structured::tests::every_supported_scalar_has_only_valid_complete_json ... ok
+test structured::tests::grammar_accepts_partial_utf8_and_literal_markers ... ok
+test structured::tests::schema_keywords_must_apply_to_the_declared_type ... ok
+test structured::tests::numeric_enum_prefixes_do_not_depend_on_candidate_order ... ok
+test structured::tests::string_arguments_must_occur_in_the_user_input ... ok
+test model::tests::packed_gather_residency_counts_the_stored_bytes ... ok
+test model::tests::omitted_prefix_logits_keep_the_cache_and_the_last_distribution ... ok
+test model::tests::parallel_prefill_tail_matches_each_token ... ok
+test structured::tests::unsupported_constraints_are_not_silently_dropped ... ok
+test structured::tests::grammar_accepts_valid_prefixes_and_rejects_wrong_values ... ok
+test model::tests::histories_drop_tokens_outside_the_effective_window ... ok
+test tokenizer::tests::bounded_encoder_rejects_bytes_and_memory_without_partial_output ... ok
+test tokenizer::tests::tokenizer_bytes_accept_the_exact_limit ... ok
+test structured::tests::tool_metadata_is_bounded_before_schema_cloning ... ok
+test structured::tests::structure_boundaries_and_optional_fields ... ok
+test model::tests::one_extra_request_is_rejected_while_a_permit_is_held ... ok
+test model::tests::only_a_finished_generation_returns_a_token_receipt ... ok
+test archive::tests::every_cq_width_matches_an_independent_walsh_matrix ... ok
+test tokenizer::tests::byte_tokens_restore_split_utf8_and_reject_unknown_ids ... ok
+test model::tests::context_length_and_generation_bound_fail_closed ... ok
+test model::tests::power_budgets_accept_the_exact_limit_and_reject_one_past ... ok
+test model::tests::grammar_cancellation_does_not_return_a_tool_call ... ok
+test structured::tests::tool_request_accepts_the_exact_byte_limit ... ok
+test structured::tests::bounded_mutation_campaign_never_accepts_invalid_json ... ok
+test archive::tests::validates_real_layout_and_rejects_every_truncation ... ok
+test tokenizer::tests::heap_matches_exhaustive_merges_for_ties_and_stale_neighbors ... ok
+test tokenizer::tests::cancellation_interrupts_symbol_scan_heap_merge_and_output ... ok
+test archive::tests::bounded_archive_mutations_never_panic_or_bypass_limits ... ok
+
+test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+     Running unittests src/main.rs (target/debug/deps/a3s_akis-0c662c6d4c930758)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli_boundary.rs (target/debug/deps/cli_boundary-10b7f84629aeba2e)
+
+running 5 tests
+test missing_empty_and_unreadable_models_do_not_panic ... ok
+test explicit_weights_need_no_home_and_no_writable_directory ... ok
+test inspect_accepts_paths_with_spaces_and_han_characters ... ok
+test inference_does_not_require_network ... ok
+test short_arguments_illegal_integers_and_unknown_fields_are_rejected ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s
+
+     Running tests/cli_signal.rs (target/debug/deps/cli_signal-2c1006a35af2458f)
+
+running 2 tests
+test sigterm_cancels_complete_without_a_tool_call ... ok
+test sigint_cancels_complete_without_a_tool_call ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+   Doc-tests a3s_akis
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `release` profile [optimized] target(s) in 0.17s
+{
+  "name": "akis-terminal",
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "inspect-pinned-needle3",
+      "name": "inspect-pinned-needle3",
+      "surface": "tui",
+      "timeout_ms": 30000,
+      "steps": [
+        {
+          "id": "archive-loaded",
+          "action": {
+            "type": "wait",
+            "condition": {
+              "type": "text",
+              "value": "\"tensors\": 581"
+            }
+          }
+        },
+        {
+          "id": "artifact-identity",
+          "action": {
+            "type": "assert",
+            "expectation": {
+              "type": "text_visible",
+              "value": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38"
+            }
+          }
+        },
+        {
+          "id": "needle-width",
+          "action": {
+            "type": "assert",
+            "expectation": {
+              "type": "text_visible",
+              "value": "\"width\": 768"
+            }
+          }
+        },
+        {
+          "id": "archive-evidence",
+          "action": {
+            "type": "terminal_recording",
+            "path": "terminal/inspect.vt"
+          }
+        }
+      ]
+    }
+  ]
+}
+{
+  "run_id": "a3s-test-94661-1",
+  "suite": "akis-terminal",
+  "status": "passed",
+  "scenarios": [
+    {
+      "id": "inspect-pinned-needle3",
+      "name": "inspect-pinned-needle3",
+      "surface": "tui",
+      "status": "passed",
+      "duration_ms": 632,
+      "steps": [
+        {
+          "id": "archive-loaded",
+          "status": "passed",
+          "duration_ms": 609,
+          "attempts": 1,
+          "output": {
+            "summary": "terminal wait condition matched",
+            "data": {
+              "output": {
+                "retained_bytes": 785,
+                "total_bytes": 785,
+                "truncated": false
+              },
+              "process": {
+                "exit_code": 0,
+                "running": false,
+                "signal": null
+              },
+              "surface": "tui",
+              "viewport": {
+                "alternate_screen": false,
+                "application_cursor": false,
+                "bracketed_paste": false,
+                "columns": 120,
+                "cursor": {
+                  "column": 0,
+                  "row": 40,
+                  "visible": true
+                },
+                "rows": 60,
+                "text": "{\n  \"geometry\": {\n    \"context\": 8192,\n    \"conv_taps\": 3,\n    \"engram_dilation\": 3,\n    \"engram_dim\": 128,\n    \"engram_orders\": [\n      2,\n      3\n    ],\n    \"engram_seed_heads\": 0,\n    \"engram_sites\": [\n      3,\n      7,\n      11,\n      15,\n      19\n    ],\n    \"engram_slots\": 18432,\n    \"engram_tables\": 6,\n    \"engram_taps\": 4,\n    \"global_mask\": 541200,\n    \"hadamard\": 1024,\n    \"heads\": 12,\n    \"kv_bits\": 8,\n    \"kv_heads\": 2,\n    \"kv_window\": 256,\n    \"lanes\": 4,\n    \"layers\": 20,\n    \"out_vocab\": 8192,\n    \"qk_dim\": 48,\n    \"rope_theta\": 100000.0,\n    \"sliding_window\": 1024,\n    \"v_dim\": 64,\n    \"vocab\": 8192,\n    \"width\": 768\n  },\n  \"sha256\": \"c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38\",\n  \"tensors\": 581\n}"
+              }
+            },
+            "evidence": []
+          },
+          "error": null
+        },
+        {
+          "id": "artifact-identity",
+          "status": "passed",
+          "duration_ms": 0,
+          "attempts": 1,
+          "output": {
+            "summary": "terminal text is visible",
+            "data": {
+              "text": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+              "visible": true
+            },
+            "evidence": []
+          },
+          "error": null
+        },
+        {
+          "id": "needle-width",
+          "status": "passed",
+          "duration_ms": 0,
+          "attempts": 1,
+          "output": {
+            "summary": "terminal text is visible",
+            "data": {
+              "text": "\"width\": 768",
+              "visible": true
+            },
+            "evidence": []
+          },
+          "error": null
+        },
+        {
+          "id": "archive-evidence",
+          "status": "passed",
+          "duration_ms": 0,
+          "attempts": 1,
+          "output": {
+            "summary": "terminal recording captured",
+            "data": {
+              "bytes": 785
+            },
+            "evidence": [
+              {
+                "name": "terminal/inspect.vt",
+                "path": "/Users/roylin/code/a3s/crates/akis/.a3s-test/runs/a3s-test-94661-1/inspect-pinned-needle3/terminal/inspect.vt",
+                "media_type": "application/vnd.a3s.terminal-vt"
+              }
+            ]
+          },
+          "error": null
+        }
+      ],
+      "error": null,
+      "cleanup_error": null
+    }
+  ]
+}
+{"id": "lights-on-en", "actual": {"function_calls": [{"name": "set_lights", "arguments": {"on": true, "room": "kitchen"}}], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "lights-off-en", "actual": {"function_calls": [{"name": "set_lights", "arguments": {"on": false, "room": "bedroom"}}], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "lights-on-zh", "actual": {"function_calls": [], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "lights-off-zh", "actual": {"function_calls": [], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "irrelevant", "actual": {"function_calls": [], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "negated-action", "actual": {"function_calls": [{"name": "set_lights", "arguments": {"on": false, "room": "kitchen"}}], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"id": "missing-room", "actual": {"function_calls": [], "suppressed_calls": [{"name": "set_lights", "arguments": {"on": true, "room": "living room"}}], "ungrounded": ["set_lights.room"]}, "status": "passed"}
+{"id": "quoted-action", "actual": {"function_calls": [], "suppressed_calls": [], "ungrounded": []}, "status": "passed"}
+{"passed": 8, "failed": 0, "binary_sha256": "9cc7f01369941ec446f78659e2b4335aab0f3abfce509c9a3369fb643ca6cfcb", "model_sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38", "library_sha256": "993d617e1136d644560c1fe59058e40810b9386645d01d2f6472af042f4c72ec", "oracle_sha256": "429f4940cc444f0da695d2f810dd348b69304740e7d211cef3ebb4449f82ec25"}
+{"status": "passed", "commands": ["inspect", "tokenize", "logits", "layers", "embed", "generate", "complete"], "binary_sha256": "9cc7f01369941ec446f78659e2b4335aab0f3abfce509c9a3369fb643ca6cfcb", "model_sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38"}
+{"id": "inspect", "observed": {"geometry": {"context": 8192, "conv_taps": 3, "engram_dilation": 3, "engram_dim": 128, "engram_orders": [2, 3], "engram_seed_heads": 0, "engram_sites": [3, 7, 11, 15, 19], "engram_slots": 18432, "engram_tables": 6, "engram_taps": 4, "global_mask": 541200, "hadamard": 1024, "heads": 12, "kv_bits": 8, "kv_heads": 2, "kv_window": 256, "lanes": 4, "layers": 20, "out_vocab": 8192, "qk_dim": 48, "rope_theta": 100000.0, "sliding_window": 1024, "v_dim": 64, "vocab": 8192, "width": 768}, "sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38", "tensors": 581}, "status": "passed", "seconds": 0.069214}
+{"id": "tokenize-unicode", "observed": {"ids": [256, 217, 188, 257, 193, 217, 8092, 268, 187, 194, 156, 315, 948, 8171, 337, 232, 157, 38, 10], "text": "你好 🦀 café é\n<tool_call>"}, "status": "passed", "seconds": 0.070025}
+{"id": "embedding-deterministic-normalized", "observed": {"dimensions": 3072, "norm": 1.0000000922891101}, "status": "passed", "seconds": 1.28178}
+{"id": "lights-on-en", "observed": {"calls": [{"name": "set_lights", "arguments": {"on": true, "room": "kitchen"}}], "tokens": 19, "head_score": 0.8660065, "receipt": {"schema": "a3s.power.embedded-execution-receipt.v1", "model": {"family": "needle3", "revision": "0.1.0", "weightsSha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38"}, "runtime": {"name": "a3s-power-native", "version": "0.10.0", "device": "cpu"}, "input": {"representation": "token-ids", "sha256": "87839ec0a525af138fa5f1dee66ac160013031b2e4f326a70a1ba231ca77cec5", "byteLength": 236, "itemCount": 59}, "output": {"representation": "token-ids", "sha256": "45484bf60d81127c4015a820eeef75b53b257ad61cd85ee506ccd29f0b8b444c", "byteLength": 76, "itemCount": 19}}}, "status": "passed", "seconds": 1.0668}
+{"id": "lights-off-en", "observed": {"calls": [{"name": "set_lights", "arguments": {"on": false, "room": "bedroom"}}], "tokens": 47, "head_score": 0.79703397, "receipt": {"schema": "a3s.power.embedded-execution-receipt.v1", "model": {"family": "needle3", "revision": "0.1.0", "weightsSha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38"}, "runtime": {"name": "a3s-power-native", "version": "0.10.0", "device": "cpu"}, "input": {"representation": "token-ids", "sha256": "4967a202b96ac2f8fc0701cafd81bb15b7f982b939a168cf2ad4f7d4df6674d6", "byteLength": 236, "itemCount": 59}, "output": {"representation": "token-ids", "sha256": "fe5b1b77470ed328e59c31e9a6e12dc025def91b2be5602a640a788138b16337", "byteLength": 188, "itemCount": 47}}}, "status": "passed", "seconds": 1.207321}
+{"id": "lights-on-zh", "status": "failed", "error": "{'expected': [{'name': 'set_lights', 'arguments': {'room': '厨房', 'on': True}}], 'actual': []}", "seconds": 1.010466}
+{"id": "lights-off-zh", "status": "failed", "error": "{'expected': [{'name': 'set_lights', 'arguments': {'room': '客厅', 'on': False}}], 'actual': []}", "seconds": 1.024569}
+{"id": "irrelevant", "observed": {"calls": [], "tokens": 20, "head_score": 0.9052133, "receipt": {"schema": "a3s.power.embedded-execution-receipt.v1", "model": {"family": "needle3", "revision": "0.1.0", "weightsSha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38"}, "runtime": {"name": "a3s-power-native", "version": "0.10.0", "device": "cpu"}, "input": {"representation": "token-ids", "sha256": "1bcbc3ab345745c88d4957a6a09c7a812b1b39c1e1e57740b74518d3ab05b457", "byteLength": 244, "itemCount": 61}, "output": {"representation": "token-ids", "sha256": "9782e978b2b786c7e467a573993943021b1898e63ae032dd27b6b6a0dd7f0199", "byteLength": 80, "itemCount": 20}}}, "status": "passed", "seconds": 1.028274}
+{"id": "negated-action", "status": "failed", "error": "{'expected': [], 'actual': [{'name': 'set_lights', 'arguments': {'on': False, 'room': 'kitchen'}}]}", "seconds": 1.163147}
+{"id": "missing-room", "observed": {"calls": [], "tokens": 52, "head_score": 0.22516474, "receipt": {"schema": "a3s.power.embedded-execution-receipt.v1", "model": {"family": "needle3", "revision": "0.1.0", "weightsSha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38"}, "runtime": {"name": "a3s-power-native", "version": "0.10.0", "device": "cpu"}, "input": {"representation": "token-ids", "sha256": "c09c6c28345a5ed647054a86d2ee4e0912509ea547a302b807c4f16f5e6aa43c", "byteLength": 232, "itemCount": 58}, "output": {"representation": "token-ids", "sha256": "9e5df0d7460853f3d4ff72836a530f114b98fe05492f8464f5ea2bbb073354df", "byteLength": 208, "itemCount": 52}}}, "status": "passed", "seconds": 1.239132}
+{"id": "quoted-action", "observed": {"calls": [], "tokens": 14, "head_score": 0.6966743, "receipt": {"schema": "a3s.power.embedded-execution-receipt.v1", "model": {"family": "needle3", "revision": "0.1.0", "weightsSha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38"}, "runtime": {"name": "a3s-power-native", "version": "0.10.0", "device": "cpu"}, "input": {"representation": "token-ids", "sha256": "133227a3f9c8ce8da5ae6fe69ed3307db96607bd1b81f33d9bd27e9769de1113", "byteLength": 300, "itemCount": 75}, "output": {"representation": "token-ids", "sha256": "a4c16ea5e2b9d0f7ef39b2cca5fe2da4e19459213082d198dbae6b478cb0ce80", "byteLength": 56, "itemCount": 14}}}, "status": "passed", "seconds": 1.088589}
+{"id": "invalid-stdin", "observed": null, "status": "passed", "seconds": 0.069817}
+{"id": "unknown-command", "observed": null, "status": "passed", "seconds": 0.069369}
+{"id": "closed-output-pipe", "observed": null, "status": "passed", "seconds": 0.070468}
+{"id": "zero-generation-bound", "observed": null, "status": "passed", "seconds": 0.601447}
+{"id": "truncated-completion", "observed": null, "status": "passed", "seconds": 0.876505}
+{"id": "unsupported-schema", "observed": null, "status": "passed", "seconds": 0.610745}
+{"platform": "macOS-26.6.2-arm64-arm-64bit", "machine": "arm64", "model_sha256": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38", "binary_sha256": "9cc7f01369941ec446f78659e2b4335aab0f3abfce509c9a3369fb643ca6cfcb", "cases_sha256": "fce6550d61d2b3041cd4bcd4d19605366bbea6585a5d0bd9ba19a4adbb04c6ef", "passed": 14, "failed": 3}
+CERT_EXIT:1
