@@ -358,6 +358,42 @@ fn kron_scalar(x: &[f32], aw: &[f32], bw: &[f32], na: usize, nb: usize) -> Vec<f
 }
 
 #[test]
+fn context_length_and_generation_bound_fail_closed() {
+    let m = model(InferenceLimits::default());
+    let cancel = CancellationToken::new();
+    let context = m.geometry().context;
+    let limit = "token or context limit exceeded";
+    let empty = m.logits(&[], &cancel).unwrap_err();
+    assert!(empty.to_string().contains(limit), "{empty}");
+    let accepted = m.logits(&vec![2; context], &cancel).unwrap();
+    assert_eq!(accepted.len(), m.geometry().out_vocab);
+    assert!(accepted.iter().all(|value| value.is_finite()));
+    let over = m.logits(&vec![2; context + 1], &cancel).unwrap_err();
+    assert!(over.to_string().contains(limit), "{over}");
+
+    let cap = InferenceLimits::default().max_generated_tokens;
+    let over_cap = m.generate("hi", cap + 1, &cancel).unwrap_err();
+    assert!(over_cap.to_string().contains(limit), "{over_cap}");
+
+    // The default generation cap is above this fixture's context, so the call
+    // above rejects on context. This model keeps the prompt inside that
+    // context and sets the generation cap to one token.
+    let bounded = model(InferenceLimits {
+        max_generated_tokens: 1,
+        ..InferenceLimits::default()
+    });
+    assert!(bounded.geometry().context > 2);
+    if let Err(error) = bounded.generate("hi", 1, &cancel) {
+        assert!(
+            !error.to_string().contains(limit),
+            "a one-token generation was rejected as a context overflow: {error}"
+        );
+    }
+    let step_over = bounded.generate("hi", 2, &cancel).unwrap_err();
+    assert!(step_over.to_string().contains(limit), "{step_over}");
+}
+
+#[test]
 fn kron_matches_the_scalar_triple_loop_on_every_lane() {
     for (na, nb) in [
         (0, 3),

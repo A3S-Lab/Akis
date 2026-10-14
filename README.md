@@ -147,6 +147,12 @@ replayed the eight fixtures on the pinned native library. Call pairs match
 that 2026-10-13 table, including missing-room suppression only on the native
 side. Akis answers were not changed. The campaign remains 13 passed and 4
 failed. Native compatibility and a Needle replacement are not certified.
+The [boundary checks](docs/evidence/akis/20261014-boundaries/OUTCOME.md)
+lock the existing rejections for a missing, empty, or unreadable model, for
+short CLI arguments, and for one token past the fixture context. One
+8193-token logits request on needle3 was rejected before the forward. The
+campaign remains 13 passed and 4 failed. Full G0 and a Needle replacement
+are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

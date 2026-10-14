@@ -283,6 +283,14 @@ Unix CLI 已把 `SIGINT` 与 `SIGTERM` 接到进程取消标志。第一次信�
 否定样本两边都发出厨房关灯。`missing-room` 只在原生侧进入 `suppressed_calls`，
 Akis 仍返回房间字符串 `living room`。答案、期望和阈值没有改。活动仍是 13 通过 / 4 失败。
 这不是原生 ABI 兼容，也不是 G1 完成，也不是 Needle 替换认证。
+随后补上测试计划里已经点名、树上还没有的失败关闭检查。41 个库测试和 4 个 CLI 进程测试通过。
+缺失路径、空文件和模式 `000` 的文件都非零退出且不 panic。参数个数不足、非整数生成上限、
+`complete` 的未知字段同样被拒绝。合成模型上，空 `logits` 和超过 `geometry.context` 一个 token 的请求
+返回现有的 `token or context limit exceeded`。生成上限设为 1 时，下一个 token 也返回同一错误。
+真实 needle3 上，`"<think>"` 重复 8192 次再加 CLI 的 BOS，共 8193 个 token，进程退出码 1，
+stdout 为空，stderr 为 `invalid request: token or context limit exceeded`。状态预算没有提高。
+这 17 条活动仍是 13 通过 / 4 失败，`missing-room` 的房间字符串仍是 `living room`。
+覆盖引导模糊测试和其余边界矩阵仍在。这不是 G0 完成，也不是 Needle 替换认证。
 
 ## 10. 扩展轨道的额外出口
 

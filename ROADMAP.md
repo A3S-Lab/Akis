@@ -5,7 +5,7 @@ production certification has been granted.** Baseline: 2026-10-13.
 
 | Gate | State | Retained evidence / next obligation |
 | --- | --- | --- |
-| G0 artifact, tokenizer, structure, CLI | Partial | 32 unit tests, 120 upstream tokenizer comparisons, all CQ widths, 10,000 grammar and 2,000 artifact mutations pass; coverage-guided fuzz and full boundary matrix remain |
+| G0 artifact, tokenizer, structure, CLI | Partial | 41 library tests and 4 CLI process tests pass. The new checks reject a missing path, an empty file, and a mode-000 file without a panic, reject short CLI arguments, a non-integer generation bound, and an unknown `complete` field, and reject an empty logits request plus one token past the fixture context. A one-token generation cap rejects the next token with the existing request error. One 8193-token needle3 logits request returned `token or context limit exceeded` with empty stdout. 120 upstream tokenizer comparisons, all CQ widths, 10,000 grammar and 2,000 artifact mutations still pass; coverage-guided fuzz and the rest of the boundary matrix remain |
 | G1 numerical compatibility | Partial | Retained nine JAX logits cases include 255/256/257 and 1023/1024/1025 tokens. One fail-closed run now also covers 1280/1536/2048-token prompts, 20 per-layer lane means, and the activation-quantization path; confidence-pool embedding and confidence head still pass. The 2048-token logits request stayed inside the state budget (cold RSS 536,690,688 bytes beside the retained 1025-token sample of 536,035,328). One 8192-token `<think>` logits request on the same archive and the current limits completed in 49.39 seconds at 272,875,520 bytes, cosine 0.999999940, top-1 38. Each layer still attends at most the 256-row cache. A replay of the eight tool fixtures on pinned native library `993d617e` matches the 2026-10-13 call table on this binary: shared English calls, shared empty Chinese, irrelevant, and quoted proposals, a shared kitchen-off negation, and missing-room suppression only on the native side (Akis still returns room `living room`). Akis answers were not changed. The campaign remains 13 passed and 4 failed. Max context, a second depth, native behavioral compatibility, and cross-platform remain |
 | G2 task quality and calibration | Failed | Real process campaign 13/17; Chinese action, negation and missing-room failures retained; frozen larger dataset/calibration pending |
 | G3 host and cancellation | Partial | Unix CLI `SIGINT`/`SIGTERM` sets the process stop flag; grammar, head and pre-return cancellation discard the result; per-stage latency, non-Unix signals and actual host gates pending |
@@ -25,6 +25,7 @@ Latest allocation slice: [20261014 allocation map](docs/evidence/akis/20261014-a
 Latest GEMV trial: [20261014 column split](docs/evidence/akis/20261014-column-split/OUTCOME.md).
 Latest context sample: [20261014 8192-token logits](docs/evidence/akis/20261014-context-8192/OUTCOME.md).
 Latest native diff: [20261014 native tool-call diff](docs/evidence/akis/20261014-native-diff/OUTCOME.md).
+Latest boundary slice: [20261014 fail-closed boundaries](docs/evidence/akis/20261014-boundaries/OUTCOME.md).
 Every subsequent landing adds a new retained evidence directory and updates this table.
 
 Execution follows [the full E2E plan](docs/END_TO_END_TEST_PLAN.md#9-当前优先工作包):
