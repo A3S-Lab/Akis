@@ -1,0 +1,9 @@
+{"id": "lights-on-en", "seconds": 1.0250942920000001, "function_calls": [{"name": "set_lights", "arguments": {"on": true, "room": "kitchen"}}], "finished": true, "tokens": 19, "head_score": 0.8660065}
+{"id": "lights-off-en", "seconds": 1.15627275, "function_calls": [{"name": "set_lights", "arguments": {"on": false, "room": "bedroom"}}], "finished": true, "tokens": 47, "head_score": 0.79703397}
+{"id": "lights-on-zh", "seconds": 1.0569060000000001, "function_calls": [], "finished": true, "tokens": 18, "head_score": 0.9166291}
+{"id": "lights-off-zh", "seconds": 1.035140583, "function_calls": [], "finished": true, "tokens": 18, "head_score": 0.9054608}
+{"id": "irrelevant", "seconds": 1.000165375, "function_calls": [], "finished": true, "tokens": 20, "head_score": 0.9052133}
+{"id": "negated-action", "seconds": 1.1793520419999997, "function_calls": [{"name": "set_lights", "arguments": {"on": false, "room": "kitchen"}}], "finished": true, "tokens": 44, "head_score": 0.61980885}
+{"id": "missing-room", "seconds": 1.1823337919999997, "function_calls": [{"name": "set_lights", "arguments": {"on": true, "room": "living room"}}], "finished": true, "tokens": 52, "head_score": 0.22516474}
+{"id": "quoted-action", "seconds": 1.0348279160000002, "function_calls": [], "finished": true, "tokens": 14, "head_score": 0.6966743}
+

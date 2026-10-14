@@ -1,0 +1,8 @@
+{"id": "lights-on-en", "native_calls": [{"name": "set_lights", "arguments": {"room": "kitchen", "on": true}}], "akis_calls": [{"name": "set_lights", "arguments": {"room": "kitchen", "on": true}}], "calls_equal": true, "native_suppressed": [], "native_negation": false}
+{"id": "lights-off-en", "native_calls": [{"name": "set_lights", "arguments": {"room": "bedroom", "on": false}}], "akis_calls": [{"name": "set_lights", "arguments": {"room": "bedroom", "on": false}}], "calls_equal": true, "native_suppressed": [], "native_negation": false}
+{"id": "lights-on-zh", "native_calls": [], "akis_calls": [], "calls_equal": true, "native_suppressed": [], "native_negation": null}
+{"id": "lights-off-zh", "native_calls": [], "akis_calls": [], "calls_equal": true, "native_suppressed": [], "native_negation": null}
+{"id": "irrelevant", "native_calls": [], "akis_calls": [], "calls_equal": true, "native_suppressed": [], "native_negation": null}
+{"id": "negated-action", "native_calls": [{"name": "set_lights", "arguments": {"room": "kitchen", "on": false}}], "akis_calls": [{"name": "set_lights", "arguments": {"room": "kitchen", "on": false}}], "calls_equal": true, "native_suppressed": [], "native_negation": true}
+{"id": "missing-room", "native_calls": [], "akis_calls": [{"name": "set_lights", "arguments": {"room": "living room", "on": true}}], "calls_equal": false, "native_suppressed": [{"name": "set_lights", "arguments": {"room": "living room", "on": true}}], "native_negation": false}
+{"id": "quoted-action", "native_calls": [], "akis_calls": [], "calls_equal": true, "native_suppressed": [], "native_negation": null}

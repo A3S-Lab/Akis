@@ -142,6 +142,11 @@ The [8192-token sample](docs/evidence/akis/20261014-context-8192/OUTCOME.md)
 ran one `<think>` logits request inside the current state budget: 49.39
 seconds, 272,875,520 bytes, cosine 0.999999940, top-1 38. Max context and a
 Needle replacement are not certified.
+The [native tool-call diff](docs/evidence/akis/20261014-native-diff/OUTCOME.md)
+replayed the eight fixtures on the pinned native library. Call pairs match
+that 2026-10-13 table, including missing-room suppression only on the native
+side. Akis answers were not changed. The campaign remains 13 passed and 4
+failed. Native compatibility and a Needle replacement are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
