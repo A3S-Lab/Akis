@@ -91,3 +91,33 @@ fn short_arguments_illegal_integers_and_unknown_fields_are_rejected() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn inspect_accepts_paths_with_spaces_and_han_characters() {
+    let root = std::env::temp_dir().join(format!("akis-path-{}", std::process::id()));
+    let spaced = root.join("model dir");
+    std::fs::create_dir_all(&spaced).unwrap();
+    let bytes = synthetic_fixture::fixture();
+    let plain = root.join("plain.cact");
+    let spaced_file = spaced.join("fixture.cact");
+    let han_file = root.join("模型.cact");
+    std::fs::write(&plain, &bytes).unwrap();
+    std::fs::write(&spaced_file, &bytes).unwrap();
+    std::fs::write(&han_file, &bytes).unwrap();
+    let plain_sha = sha256_field(&output(&["inspect", plain.to_str().unwrap()], None));
+    for path in [spaced_file, han_file] {
+        let result = output(&["inspect", path.to_str().unwrap()], None);
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(result.status.success(), "{stderr}");
+        assert!(!stderr.contains("panicked"), "{stderr}");
+        assert_eq!(sha256_field(&result), plain_sha);
+    }
+    let _ = std::fs::remove_dir_all(root);
+}
+
+fn sha256_field(result: &Output) -> String {
+    let text = String::from_utf8(result.stdout.clone()).unwrap();
+    let marker = "\"sha256\": \"";
+    let at = text.find(marker).unwrap() + marker.len();
+    text[at..at + 64].to_string()
+}

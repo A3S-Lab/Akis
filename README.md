@@ -234,6 +234,11 @@ The [numerical ledger](docs/evidence/akis/20261014-ledger/OUTCOME.md) records
 retained 2.61-second sample. The samples are records. The campaign remains 14
 passed and 3 failed. A Needle replacement is not certified.
 
+The [path checks](docs/evidence/akis/20261014-paths/OUTCOME.md) accept an
+inspect path that contains a space and a Han filename. Empty logits, layers,
+and embed stay finite and repeat on a second process. The campaign remains 14
+passed and 3 failed. A Needle replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

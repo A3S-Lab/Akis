@@ -46,6 +46,22 @@ def main():
     assert info["sha256"] == MODEL_SHA and info["tensors"] == 581
     assert geometry["context"] == 8192 and geometry["layers"] == 20
     assert geometry["width"] == 768 and geometry["vocab"] == 8192
+    empty_logits = run(binary, model, "logits", "")
+    assert empty_logits["ids"] == [2] and len(empty_logits["logits"]) == 8192
+    finite(empty_logits["logits"], "empty logits")
+    assert run(binary, model, "logits", "") == empty_logits
+    empty_layers = run(binary, model, "layers", "")
+    assert empty_layers["ids"] == [2] and len(empty_layers["layers"]) == 20
+    for index, row in enumerate(empty_layers["layers"]):
+        assert len(row) == 768, index
+        finite(row, f"empty layer {index}")
+    assert len(empty_layers["quantized_hidden"]) == 768
+    finite(empty_layers["quantized_hidden"], "empty quantized hidden")
+    assert run(binary, model, "layers", "") == empty_layers
+    empty_embed = run(binary, model, "embed", "")
+    assert len(empty_embed) == 3072
+    finite(empty_embed, "empty embedding")
+    assert run(binary, model, "embed", "") == empty_embed
     tokens = run(binary, model, "tokenize", "hello")
     assert tokens["text"] == "hello" and tokens["ids"]
     expected_ids = [2, *tokens["ids"]]
