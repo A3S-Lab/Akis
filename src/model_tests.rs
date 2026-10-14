@@ -1203,3 +1203,133 @@ fn packed_gather_residency_counts_the_stored_bytes() {
         "{expanded_limit}"
     );
 }
+
+fn token_id_digest(ids: &[u32]) -> (String, usize, usize) {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"a3s-power-token-ids-v1\0");
+    for id in ids {
+        hasher.update(id.to_le_bytes());
+    }
+    (
+        format!("{:x}", hasher.finalize()),
+        std::mem::size_of_val(ids),
+        ids.len(),
+    )
+}
+
+fn object_keys(value: &serde_json::Value) -> std::collections::BTreeSet<String> {
+    value
+        .as_object()
+        .expect("json object")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+fn key_set(names: &[&str]) -> std::collections::BTreeSet<String> {
+    names.iter().map(|name| (*name).to_string()).collect()
+}
+
+fn assert_no_receipt_text(error: &Error) {
+    let text = error.to_string();
+    assert!(!text.contains("embedded-execution-receipt"), "{text}");
+    assert!(!text.contains("signature"), "{text}");
+    assert!(!text.contains("attestation"), "{text}");
+}
+
+#[test]
+fn only_a_finished_generation_returns_a_token_receipt() {
+    let m = model(InferenceLimits::default());
+    let cancel = CancellationToken::new();
+    let logits = m.logits(&[2, 5, 4], &cancel).unwrap();
+    assert!(!serde_json::to_string(&logits).unwrap().contains("receipt"));
+    let readout = m.layer_readout(&[2, 5, 4], &cancel).unwrap();
+    assert!(!format!("{readout:?}").contains("receipt"));
+    let embed = m.embed("hi", &cancel).unwrap_err();
+    assert!(
+        embed
+            .to_string()
+            .contains("no embedding or confidence probe"),
+        "{embed}"
+    );
+    assert_no_receipt_text(&embed);
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+
+    let bound = m.generate("hi", 0, &cancel).unwrap_err();
+    assert!(
+        bound
+            .to_string()
+            .contains("invalid prompt or generation bound"),
+        "{bound}"
+    );
+    assert_no_receipt_text(&bound);
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+
+    let stopped = CancellationToken::new();
+    stopped.cancel();
+    let cancelled = m.generate("hi", 2, &stopped).unwrap_err();
+    assert_cancelled(cancelled);
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+
+    let result = m.generate("hi", 2, &cancel).unwrap();
+    assert!(result.head_score.is_none());
+    assert!(!result.token_ids.is_empty());
+    assert_eq!(m.runtime.admission_snapshot().active, 0);
+    let mut input = vec![m.tokenizer().bos];
+    input.extend(m.tokenizer().encode("hi"));
+    assert_eq!(result.input_tokens, input.len());
+    let (input_sha, input_bytes, input_count) = token_id_digest(&input);
+    let (output_sha, output_bytes, output_count) = token_id_digest(&result.token_ids);
+    assert_eq!(result.receipt.input.sha256, input_sha);
+    assert_eq!(result.receipt.input.byte_length, input_bytes);
+    assert_eq!(result.receipt.input.item_count, input_count);
+    assert_eq!(result.receipt.output.sha256, output_sha);
+    assert_eq!(result.receipt.output.byte_length, output_bytes);
+    assert_eq!(result.receipt.output.item_count, output_count);
+    let mut flipped = result.token_ids.clone();
+    let last = flipped.len() - 1;
+    flipped[last] ^= 1;
+    assert_ne!(token_id_digest(&flipped).0, output_sha);
+    let file_sha = {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(crate::test_support::fixture()))
+    };
+    let value = serde_json::to_value(&result.receipt).unwrap();
+    assert_eq!(
+        object_keys(&value),
+        key_set(&["schema", "model", "runtime", "input", "output"])
+    );
+    assert_eq!(value["schema"], "a3s.power.embedded-execution-receipt.v1");
+    assert_eq!(
+        object_keys(&value["model"]),
+        key_set(&["family", "revision", "weightsSha256"])
+    );
+    assert_eq!(value["model"]["family"], "needle3");
+    assert_eq!(value["model"]["revision"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(value["model"]["weightsSha256"], file_sha);
+    assert_eq!(
+        object_keys(&value["runtime"]),
+        key_set(&["name", "version", "device"])
+    );
+    assert_eq!(value["runtime"]["name"], "a3s-power-native");
+    assert_eq!(value["runtime"]["device"], "cpu");
+    for side in ["input", "output"] {
+        assert_eq!(
+            object_keys(&value[side]),
+            key_set(&["representation", "sha256", "byteLength", "itemCount"])
+        );
+        assert_eq!(value[side]["representation"], "token-ids");
+    }
+    let text = serde_json::to_string(&value).unwrap();
+    for word in [
+        "signature",
+        "attestation",
+        "accelerator",
+        "microbatch",
+        "shapeProfile",
+        "timestamp",
+    ] {
+        assert!(!text.contains(word), "{word} in {text}");
+    }
+}

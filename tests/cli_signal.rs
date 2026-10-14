@@ -71,8 +71,12 @@ fn signal_during_complete(signal: &str) {
         "stderr did not report cancellation: {stderr}"
     );
     assert!(
-        !stdout.contains("function_calls"),
-        "cancelled command returned a tool call: {stdout}"
+        stdout.is_empty(),
+        "cancelled command wrote a receipt: {stdout}"
+    );
+    assert!(
+        !stderr.contains("embedded-execution-receipt"),
+        "cancelled command reported a receipt: {stderr}"
     );
     finished.store(true, Ordering::SeqCst);
     watchdog.join().unwrap();

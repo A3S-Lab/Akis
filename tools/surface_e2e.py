@@ -45,6 +45,64 @@ def finite(values, label):
         raise SystemExit(f"non-finite {label}")
 
 
+PROOF_FIELDS = {
+    "signature",
+    "attestation",
+    "accelerator",
+    "microbatch",
+    "shapeProfile",
+    "timestamp",
+}
+
+
+def exact_keys(value, expected, label):
+    if set(value) != set(expected):
+        raise SystemExit(f"{label} keys {sorted(value)}")
+
+
+def forbid_fields(value, banned):
+    if isinstance(value, dict):
+        found = banned.intersection(value)
+        if found:
+            raise SystemExit(f"unexpected fields {sorted(found)}")
+        for item in value.values():
+            forbid_fields(item, banned)
+    elif isinstance(value, list):
+        for item in value:
+            forbid_fields(item, banned)
+
+
+def assert_bare(value, keys):
+    exact_keys(value, keys, "bare result")
+    forbid_fields(value, PROOF_FIELDS | {"receipt"})
+
+
+def assert_receipt(receipt, input_ids, output_ids):
+    exact_keys(receipt, ["schema", "model", "runtime", "input", "output"], "receipt")
+    forbid_fields(receipt, PROOF_FIELDS)
+    if receipt["schema"] != "a3s.power.embedded-execution-receipt.v1":
+        raise SystemExit(receipt["schema"])
+    exact_keys(receipt["model"], ["family", "revision", "weightsSha256"], "model")
+    exact_keys(receipt["runtime"], ["name", "version", "device"], "runtime")
+    if receipt["model"]["family"] != "needle3" or receipt["model"]["weightsSha256"] != MODEL_SHA:
+        raise SystemExit("receipt model identity")
+    if receipt["runtime"]["name"] != "a3s-power-native" or receipt["runtime"]["device"] != "cpu":
+        raise SystemExit("receipt runtime identity")
+    for side, ids in (("input", input_ids), ("output", output_ids)):
+        exact_keys(receipt[side], ["representation", "sha256", "byteLength", "itemCount"], side)
+        digest, size, count = token_record(ids)
+        if (
+            receipt[side]["representation"] != "token-ids"
+            or (receipt[side]["sha256"], receipt[side]["byteLength"], receipt[side]["itemCount"])
+            != (digest, size, count)
+        ):
+            raise SystemExit(f"{side} receipt digest")
+    changed = list(output_ids)
+    changed[-1] ^= 1
+    if token_record(changed)[0] == receipt["output"]["sha256"]:
+        raise SystemExit("changed token matched the output digest")
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: python3 tools/surface_e2e.py MODEL BINARY")
@@ -58,18 +116,22 @@ def main():
         or missing.stdout
         or "panicked" in missing.stderr
         or "No such file" not in missing.stderr
+        or "embedded-execution-receipt" in missing.stderr
     ):
         raise SystemExit(missing.stderr.strip() or "missing model did not fail closed")
     info = run(binary, model, "inspect")
+    assert_bare(info, ["sha256", "tensors", "geometry"])
     geometry = info["geometry"]
     assert info["sha256"] == MODEL_SHA and info["tensors"] == 581
     assert geometry["context"] == 8192 and geometry["layers"] == 20
     assert geometry["width"] == 768 and geometry["vocab"] == 8192
     empty_logits = run(binary, model, "logits", "")
+    assert_bare(empty_logits, ["ids", "logits"])
     assert empty_logits["ids"] == [2] and len(empty_logits["logits"]) == 8192
     finite(empty_logits["logits"], "empty logits")
     assert run(binary, model, "logits", "") == empty_logits
     empty_layers = run(binary, model, "layers", "")
+    assert_bare(empty_layers, ["ids", "layers", "quantized_hidden"])
     assert empty_layers["ids"] == [2] and len(empty_layers["layers"]) == 20
     for index, row in enumerate(empty_layers["layers"]):
         assert len(row) == 768, index
@@ -78,16 +140,20 @@ def main():
     finite(empty_layers["quantized_hidden"], "empty quantized hidden")
     assert run(binary, model, "layers", "") == empty_layers
     empty_embed = run(binary, model, "embed", "")
-    assert len(empty_embed) == 3072
+    forbid_fields(empty_embed, PROOF_FIELDS | {"receipt"})
+    assert isinstance(empty_embed, list) and len(empty_embed) == 3072
     finite(empty_embed, "empty embedding")
     assert run(binary, model, "embed", "") == empty_embed
     tokens = run(binary, model, "tokenize", "hello")
+    assert_bare(tokens, ["ids", "text"])
     assert tokens["text"] == "hello" and tokens["ids"]
     expected_ids = [2, *tokens["ids"]]
     logits = run(binary, model, "logits", "hello")
+    assert_bare(logits, ["ids", "logits"])
     assert logits["ids"] == expected_ids and len(logits["logits"]) == 8192
     finite(logits["logits"], "logits")
     layers = run(binary, model, "layers", "hello")
+    assert_bare(layers, ["ids", "layers", "quantized_hidden"])
     assert layers["ids"] == expected_ids and len(layers["layers"]) == 20
     for index, row in enumerate(layers["layers"]):
         assert len(row) == 768, index
@@ -95,12 +161,28 @@ def main():
     assert len(layers["quantized_hidden"]) == 768
     finite(layers["quantized_hidden"], "quantized hidden")
     first = run(binary, model, "embed", "hello")
+    forbid_fields(first, PROOF_FIELDS | {"receipt"})
     second = run(binary, model, "embed", "hello")
     assert first == second and len(first) == 3072
     finite(first, "embedding")
     norm = math.sqrt(sum(item * item for item in first))
     assert abs(norm - 1) < 1e-5, norm
     generated = run(binary, model, "generate", "hello", "4")
+    exact_keys(
+        generated,
+        [
+            "text",
+            "token_ids",
+            "input_tokens",
+            "finished",
+            "mean_token_probability",
+            "head_score",
+            "receipt",
+        ],
+        "generate",
+    )
+    forbid_fields(generated, PROOF_FIELDS)
+    assert_receipt(generated["receipt"], [2, *tokens["ids"]], generated["token_ids"])
     # This prompt does not emit EOS inside four tokens. The bound must stay visible.
     assert generated["finished"] is False and len(generated["token_ids"]) == 4
     assert 0 <= generated["head_score"] <= 1
@@ -112,6 +194,25 @@ def main():
         ensure_ascii=False,
     )
     complete = run(binary, model, "complete", request=request)
+    exact_keys(
+        complete,
+        ["function_calls", "suppressed_calls", "ungrounded", "generation"],
+        "complete",
+    )
+    forbid_fields(complete, PROOF_FIELDS)
+    exact_keys(
+        complete["generation"],
+        [
+            "text",
+            "token_ids",
+            "input_tokens",
+            "finished",
+            "mean_token_probability",
+            "head_score",
+            "receipt",
+        ],
+        "generation",
+    )
     calls = complete["function_calls"]
     assert calls == [{"name": "set_lights", "arguments": {"on": True, "room": "kitchen"}}]
     assert len(complete["generation"]["token_ids"]) == 19
@@ -132,10 +233,8 @@ def main():
 
 def receipt_digests(binary, model, body):
     receipt = body["generation"]["receipt"]
-    assert receipt["schema"] == "a3s.power.embedded-execution-receipt.v1"
-    assert receipt["runtime"]["device"] == "cpu"
-    assert receipt["model"]["weightsSha256"] == MODEL_SHA
     tokenized = run(binary, model, "tokenize", model_prompt("turn on the kitchen lights", [TOOL]))
+    assert_receipt(receipt, [2, *tokenized["ids"]], body["generation"]["token_ids"])
     bound = token_record([2, *tokenized["ids"]])
     assert (
         receipt["input"]["sha256"],

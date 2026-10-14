@@ -359,6 +359,8 @@ hello、256-token `<think>` 和 2048-token `user` 的 logits 相对上一版最�
 
 随后，带一个 engram 位点的合成工件把 gather 表存成 CQ。group 为 128、bits 为 1 的 1×1 表占 18 字节，展开成 F32 是 4 字节。驻留合计按存储字节计算。这个合计可以加载。少一个字节被拒绝，错误是 `resident weights exceed`。按展开长度设的限额同样被拒绝。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。54 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
 
+随后，只有完成的 `generate` 和 `complete` 带 token id 收据。schema 是 `a3s.power.embedded-execution-receipt.v1`。输入摘要是 BOS 加上提示 token，输出摘要是返回的 token id。改一个 token，摘要就不同。`logits`、`layers`、`embed`、`tokenize` 和 `inspect` 没有 receipt。收据字段里没有 signature、attestation、accelerator、microbatch、shapeProfile 或 timestamp。取消的 `complete` 标准输出为空，stderr 不含这张 schema。生成上限为 0、已取消的 `generate`、没有 head 的 `embed`，错误文本也不含这张 schema。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。55 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G3 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
+
 ## 10. 扩展轨道的额外出口
 
 - **训练/量化/导出**：固定 seed 的小数据训练、loss 与 held-out 质量、训练→导出→

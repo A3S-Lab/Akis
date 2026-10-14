@@ -284,6 +284,13 @@ less is rejected, and the smaller expanded length is rejected. Production
 limits are unchanged. The campaign remains 14 passed and 3 failed. A Needle
 replacement is not certified.
 
+The [receipt API checks](docs/evidence/akis/20261014-receipt-apis/OUTCOME.md)
+attach a token-id receipt only to a finished generate or complete. Logits,
+layer readout, embed, tokenize, and inspect carry no receipt. The receipt has
+no signature or attestation. A cancelled complete writes empty stdout. The
+campaign remains 14 passed and 3 failed. A Needle replacement is not
+certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 
