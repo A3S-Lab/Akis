@@ -239,6 +239,13 @@ inspect path that contains a space and a Han filename. Empty logits, layers,
 and embed stay finite and repeat on a second process. The campaign remains 14
 passed and 3 failed. A Needle replacement is not certified.
 
+The [receipt checks](docs/evidence/akis/20261014-receipt/OUTCOME.md) require
+both kitchen complete processes to carry schema
+`a3s.power.embedded-execution-receipt.v1`, device cpu, the archive weights
+sha256, and the same input and output sha256. The kitchen head score remains
+0.8660065. The campaign remains 14 passed and 3 failed. A Needle replacement
+is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

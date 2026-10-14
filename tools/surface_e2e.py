@@ -101,6 +101,7 @@ def main():
     assert again["function_calls"] == calls
     assert again["generation"]["token_ids"] == complete["generation"]["token_ids"]
     assert again["generation"]["head_score"] == complete["generation"]["head_score"]
+    assert receipt_digests(complete) == receipt_digests(again)
     print(json.dumps({
         "status": "passed",
         "commands": ["inspect", "tokenize", "logits", "layers", "embed", "generate", "complete"],
@@ -108,6 +109,16 @@ def main():
         "model_sha256": MODEL_SHA,
     }))
     return 0
+
+
+def receipt_digests(body):
+    receipt = body["generation"]["receipt"]
+    assert receipt["schema"] == "a3s.power.embedded-execution-receipt.v1"
+    assert receipt["runtime"]["device"] == "cpu"
+    assert receipt["model"]["weightsSha256"] == MODEL_SHA
+    pair = (receipt["input"]["sha256"], receipt["output"]["sha256"])
+    assert all(isinstance(item, str) and len(item) == 64 for item in pair)
+    return pair
 
 
 if __name__ == "__main__":
