@@ -981,23 +981,7 @@ impl Model {
         let bw = self.flat(b)?;
         let na = self.weights[a].dims()[0];
         let nb = self.weights[b].dims()[0];
-        let mut mid = vec![0.0; x.len()];
-        let mut out = vec![0.0; x.len()];
-        for i in 0..na {
-            for j in 0..nb {
-                for l in 0..nb {
-                    mid[i * nb + l] += x[i * nb + j] * bw[j * nb + l];
-                }
-            }
-        }
-        for i in 0..na {
-            for k in 0..na {
-                for l in 0..nb {
-                    out[k * nb + l] += aw[i * na + k] * mid[i * nb + l];
-                }
-            }
-        }
-        Ok(out)
+        Ok(kron_factors(x, &aw, &bw, na, nb))
     }
 
     fn mlp(&self, x: &[f32], o: usize) -> Result<Vec<f32>> {
@@ -1242,6 +1226,33 @@ fn add_bytes(total: &mut u64, factors: &[usize]) -> Result<()> {
         .and_then(|n| total.checked_add(n))
         .ok_or_else(|| Error::Request("state size overflow".into()))?;
     Ok(())
+}
+
+/// Kronecker product of two square factors. Each lane is one multiply and one
+/// add, in the same loop order as the scalar triple loop.
+fn kron_factors(x: &[f32], aw: &[f32], bw: &[f32], na: usize, nb: usize) -> Vec<f32> {
+    let mut mid = vec![0.0; x.len()];
+    let mut out = vec![0.0; x.len()];
+    for i in 0..na {
+        let dst = i * nb;
+        for j in 0..nb {
+            let scale = x[dst + j];
+            let row = j * nb;
+            axpy(&mut mid[dst..dst + nb], scale, &bw[row..row + nb]);
+        }
+    }
+    for i in 0..na {
+        let src = i * nb;
+        let col = i * na;
+        for k in 0..na {
+            axpy(
+                &mut out[k * nb..k * nb + nb],
+                aw[col + k],
+                &mid[src..src + nb],
+            );
+        }
+    }
+    out
 }
 
 pub(crate) fn check_cancel(cancel: &CancellationToken) -> Result<()> {

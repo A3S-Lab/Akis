@@ -336,3 +336,44 @@ fn cancellation_before_return_discards_the_generation() {
     assert_cancelled(error);
     assert_eq!(m.runtime.admission_snapshot().active, 0);
 }
+
+fn kron_scalar(x: &[f32], aw: &[f32], bw: &[f32], na: usize, nb: usize) -> Vec<f32> {
+    let mut mid = vec![0.0; x.len()];
+    let mut out = vec![0.0; x.len()];
+    for i in 0..na {
+        for j in 0..nb {
+            for l in 0..nb {
+                mid[i * nb + l] += x[i * nb + j] * bw[j * nb + l];
+            }
+        }
+    }
+    for i in 0..na {
+        for k in 0..na {
+            for l in 0..nb {
+                out[k * nb + l] += aw[i * na + k] * mid[i * nb + l];
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn kron_matches_the_scalar_triple_loop_on_every_lane() {
+    for (na, nb) in [
+        (0, 3),
+        (2, 0),
+        (1, 1),
+        (1, 3),
+        (2, 5),
+        (3, 7),
+        (4, 4),
+        (5, 6),
+    ] {
+        let x: Vec<f32> = (0..na * nb).map(|i| (i as f32) * 0.017 - 0.4).collect();
+        let aw: Vec<f32> = (0..na * na).map(|i| (i as f32) * 0.01 - 0.3).collect();
+        let bw: Vec<f32> = (0..nb * nb).map(|i| (i as f32) * -0.013 + 0.2).collect();
+        let found = super::kron_factors(&x, &aw, &bw, na, nb);
+        let expect = kron_scalar(&x, &aw, &bw, na, nb);
+        assert_eq!(found, expect, "na {na} nb {nb}");
+    }
+}

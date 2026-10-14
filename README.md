@@ -122,6 +122,12 @@ checks each cached value row once and adds it with a contiguous scale. The
 2048-token cold logits request fell from 18.793 seconds to 13.406 seconds.
 Cold RSS stays beside the 272,236,544-byte sample. Packed CQ GEMM and a
 Needle replacement are not certified.
+The [kron axpy checkpoint](docs/evidence/akis/20261014-kron-axpy/OUTCOME.md)
+adds each Kronecker factor row with that same scale. The 2048-token cold
+logits sample is 13.200 seconds beside the previous 13.406 seconds. That
+difference sits inside one cold-sample variation, and the factor product
+stops there. Cold RSS stays beside the 272,285,696-byte sample. Packed CQ
+GEMM and a Needle replacement are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
