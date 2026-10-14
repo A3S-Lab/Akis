@@ -305,6 +305,15 @@ control character, and a duplicate name before a call is returned. A list of
 Parameters that are not an object are rejected. The campaign remains 14
 passed and 3 failed. A Needle replacement is not certified.
 
+The [geometry checks](docs/evidence/akis/20261014-geometry/OUTCOME.md)
+accept a layer count of 64, a head count of 256, and the 1048576 size cap,
+and reject one past each. A zero required dimension, an odd qk dimension, a
+Hadamard value that is not a power of two, a non-finite rope theta, and an
+engram site past the last layer or out of order are rejected. Engram order
+count 4 and site count 16 open. One past those counts is rejected. The
+campaign remains 14 passed and 3 failed. A Needle replacement is not
+certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

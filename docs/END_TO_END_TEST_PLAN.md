@@ -365,6 +365,8 @@ hello、256-token `<think>` 和 2048-token `user` 的 logits 相对上一版最�
 
 随后，工具列表长度为 0 或 65 时，`complete` 在生成前拒绝，错误是 `tool count must be 1..64`。长度为 64 时通过这道门，随后因上下文上限失败。空名称、129 字节的名称、控制字符和重复名称被拒绝，错误是 `invalid or duplicate tool name`。128 字节的名称和带空格的名称通过这道门。参数不是 object 时被拒绝，错误是 `tool parameters must be an object`。这些拒绝都不返回收据。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。57 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
 
+随后，合成工件的几何字段在精确上限上可以打开，多一档就被拒绝。层数 64 打开、65 拒绝。头数、lane、卷积 tap，以及 engram 的 table、tap、dilation、seed 都是 256 打开、257 拒绝。vocab、宽度、qk、value、上下文、Hadamard、engram slots 和 engram dim 的上限是 1048576，再加一就被拒绝。必填维度为 0、qk 不是偶数、Hadamard 小于宽度或不是 2 的幂、rope theta 不是有限正数、输出词表大于词表、engram 位点越过最后一层或没有严格递增，错误都是 `invalid model geometry`。engram 的 order 个数 4 和位点个数 16 可以打开。order 个数 5 和位点个数 17 的错误是 `invalid engram counts`。位点已经存在时，order 为 0、slots 为 0，或 table 个数不是 order 个数的倍数，错误是 `invalid engram geometry`。没有位点时，order 为 0 仍可打开。生产限额没有提高。推理代码没有改。发布二进制仍是 `9cc7f013`。58 个库测试和 7 个 CLI 进程测试通过。质量活动仍是 14 通过 / 3 失败。这不是 G0 完成，也不是 v0.1.0 发布，也不是 Needle 替换认证。
+
 ## 10. 扩展轨道的额外出口
 
 - **训练/量化/导出**：固定 seed 的小数据训练、loss 与 held-out 质量、训练→导出→
