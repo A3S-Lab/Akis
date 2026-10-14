@@ -346,6 +346,7 @@ hello、256-token `<think>` 和 2048-token `user` 的 logits 相对上一版最�
 随后用冻结的原生信封比较了八条工具输入。发布二进制仍是 `502e9bc8`。七条的 `function_calls`、`suppressed_calls` 与 `ungrounded` 与库 `993d617e` 一致。`missing-room` 仍把 `living room` 放在 `function_calls` 里。推理代码没有改，17 条质量活动没有重跑。这不是原生行为兼容，也不是 Needle 替换认证。
 随后，字符串参数必须作为连续片段出现在用户输入里，调用才会留在 `function_calls`。`living room` 不在 `Turn on the lights.` 里，所以这条调用进入 `suppressed_calls`，路径是 `set_lights.room`。八条冻结信封全部一致。厨房开灯的 head score 仍是 0.8660065。49 个库测试和 4 个 CLI 进程测试通过。质量活动是 14 通过 / 3 失败，失败 id 是 `lights-on-zh`、`lights-off-zh`、`negated-action`。`tool_calls.json` 的期望没有改。这不是 G2 完成，也不是 Needle 替换认证。
 随后，认证入口在质量活动之前运行冻结信封和七个命令的表面脚本。`hello` 的 4 token 生成没有结束符，`finished` 为 false。厨房开灯仍是 19 个 token，head score `0.8660065`。第二次进程的 token id 与调用相同。发布二进制仍是 `9cc7f013`。质量活动仍是 14 通过 / 3 失败。这不是数值认证，也不是 Needle 替换认证。
+随后在同一二进制上跑了一次 JAX 对照，31 条通过，最低余弦 0.999274850。分词对照 120 条通过。一次冷账本：hello logits 0.62 秒、266,715,136 字节；256-token `<think>` 0.88 秒、304,775,168 字节；2048-token `user` 2.77 秒、418,955,264 字节，与保留的 2.61 秒、418,889,728 字节并列。厨房开灯 1.06 秒、274,186,240 字节，head score 仍是 0.8660065。这些是单次记录，不是 G4 通过。质量活动仍是 14 通过 / 3 失败。这不是 Needle 替换认证。
 
 ## 10. 扩展轨道的额外出口
 

@@ -1,0 +1,12 @@
+{
+  "parent_commit": "b0c0fcaf8e0c8a1f9a3580dc0173f8e207baf5b4",
+  "date": "2026-10-14 Asia/Shanghai",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "power_rev": "830760cb9dc169893e0f9ba9e91ac5399c14d485",
+  "hashes": {
+    "target/release/a3s-akis": "9cc7f01369941ec446f78659e2b4335aab0f3abfce509c9a3369fb643ca6cfcb",
+    ".cache/needle3.cact": "c9d915eca282ed42d1a09b143b592adb4cc6744ffe2d294adf5cfc5548170c38",
+    "Cargo.lock": "60f3af39d03331f2e41c69751add8992461bc31b8bfb4232feb0ae0b925ef44b"
+  },
+  "note": "No inference code changed. JAX parity 31 passed. Tokenizer parity 120 passed. Cold samples recorded only."
+}

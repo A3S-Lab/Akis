@@ -1,0 +1,15 @@
+{
+  "binary_sha256": "9cc7f01369941ec446f78659e2b4335aab0f3abfce509c9a3369fb643ca6cfcb",
+  "method": "one macOS /usr/bin/time -l process per request",
+  "samples": [
+    {"request": "logits hello", "seconds": 0.62, "maximum_resident_bytes": 266715136, "ids": 3},
+    {"request": "logits 256-token think", "seconds": 0.88, "maximum_resident_bytes": 304775168, "ids": 256},
+    {"request": "logits 2048-token user", "seconds": 2.77, "maximum_resident_bytes": 418955264, "ids": 2048},
+    {"request": "complete kitchen lights", "seconds": 1.06, "maximum_resident_bytes": 274186240, "tokens": 19, "head_score": 0.8660065}
+  ],
+  "retained_2048": {"seconds": 2.61, "maximum_resident_bytes": 418889728},
+  "jax_passed": 31,
+  "jax_minimum_cosine": 0.9992748498916626,
+  "tokenizer_passed": 120,
+  "tokenizer_hello_times_4000_seconds": 0.07748583302600309
+}
