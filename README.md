@@ -173,6 +173,15 @@ binary with max absolute error 0 and the same top-1. One cold 2048-token
 sample took 11.40 seconds and 272,924,672 bytes, beside 12.27 seconds on
 the previous binary. The campaign remains 13 passed and 4 failed. Packed CQ
 GEMM and a Needle replacement are not certified.
+The [layer GEMM](docs/evidence/akis/20261014-layer-gemm/OUTCOME.md) projects
+Q, K, V, the attention gates, the attention output, and engram key/value once
+per matrix when the prompt has at least 128 tokens. Hello matched with max
+absolute error 0. The 256-token and 2048-token logits kept the same top-1,
+with cosine 0.999997200 and 0.999998915. One cold 2048-token sample took
+6.18 seconds and 397,377,536 bytes, beside 11.77 seconds on the previous
+binary. Shorter prompts stay on the token loop after a 59-token head moved
+by 0.012. The campaign remains 13 passed and 4 failed. Packed CQ GEMM and a
+Needle replacement are not certified.
 
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:

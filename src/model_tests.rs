@@ -109,6 +109,51 @@ fn omitted_prefix_logits_keep_the_cache_and_the_last_distribution() {
 }
 
 #[test]
+fn short_and_narrow_prompts_stay_on_the_token_loop() {
+    let m = model(InferenceLimits::default());
+    assert!(!m.batched_prefill(1));
+    assert!(!m.batched_prefill(4096));
+}
+
+#[test]
+fn batched_projection_matches_each_row_product() {
+    let m = model(InferenceLimits::default());
+    let device = m.runtime.device().tensor_device();
+    let cols = 32;
+    let outs = 24;
+    let rows = 8;
+    let values: Vec<f32> = (0..cols * outs)
+        .map(|i| (i % 17) as f32 * 0.01 - 0.08)
+        .collect();
+    let w = Tensor::from_vec(values, (cols, outs), device).unwrap();
+    let input: Vec<f32> = (0..rows * cols)
+        .map(|i| (i % 13) as f32 * 0.02 - 0.11)
+        .collect();
+    let batched = m.project_matrix(&w, &input, cols).unwrap();
+    assert_eq!(batched.len(), rows * outs);
+    for row in 0..rows {
+        let one = m.gemv(&w, &input[row * cols..(row + 1) * cols]).unwrap();
+        let got = &batched[row * outs..(row + 1) * outs];
+        let max = got
+            .iter()
+            .zip(&one)
+            .map(|(left, right)| (left - right).abs())
+            .fold(0.0f32, f32::max);
+        assert!(max < 1e-5, "{max}");
+        let top = |values: &[f32]| {
+            values
+                .iter()
+                .enumerate()
+                .max_by(|(left_i, left), (right_i, right)| {
+                    left.total_cmp(right).then_with(|| right_i.cmp(left_i))
+                })
+                .map(|(index, _)| index)
+        };
+        assert_eq!(top(got), top(&one));
+    }
+}
+
+#[test]
 fn tokenization_obeys_the_power_state_budget_before_forward() {
     let limits = InferenceLimits {
         max_state_bytes: 130_000,

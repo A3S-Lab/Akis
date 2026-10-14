@@ -1,0 +1,40 @@
+{
+  "binary": "226a74b0d520d0a0bb245763fc4f25b3afd90447409379fc2d5f56144c729e09",
+  "previous_binary": "22d77e3c13857310d301723e4e6c654b8bde1c954aac68e751c73e664b49372c",
+  "hello": {"ids": 3, "top1": 8110, "max_abs": 0.0, "cosine": 1.0, "path": "token_loop"},
+  "think_256": {
+    "ids": 256,
+    "top1": 38,
+    "max_abs": 0.60337067,
+    "cosine": 0.999997200,
+    "seconds": 1.23,
+    "rss": 298074112,
+    "previous_seconds": 1.87,
+    "previous_rss": 272138240
+  },
+  "user_2048": {
+    "ids": 2048,
+    "top1": 410,
+    "max_abs": 0.2066555,
+    "cosine": 0.999998915,
+    "seconds": 6.18,
+    "rss": 397377536,
+    "previous_seconds": 11.77,
+    "previous_rss": 273072128,
+    "retained_previous_seconds": [13.2, 11.4]
+  },
+  "kitchen_complete": {
+    "tokens": 19,
+    "head_score": 0.8660065,
+    "head_abs": 0.0,
+    "calls_match": true
+  },
+  "rejected_shorter_cutoff": {
+    "tokens": 59,
+    "head": "lights-off-en",
+    "previous_head_score": 0.79703397,
+    "trial_head_score": 0.7850553,
+    "kept": false
+  },
+  "campaign": {"passed": 13, "failed": 4, "certify_exit": 1}
+}

@@ -60,6 +60,20 @@ struct State {
     quantized_hidden: Vec<f32>,
 }
 
+struct ProjectedAttention<'a> {
+    q: &'a [f32],
+    k: &'a [f32],
+    v: &'a [f32],
+    gates: &'a [f32],
+}
+
+struct TokenCarry {
+    u: Vec<f32>,
+    x: Vec<f32>,
+    post: Vec<f32>,
+    res: Vec<f32>,
+}
+
 /// Last-token lane means and the activation-quantized final hidden state.
 #[derive(Debug)]
 pub struct LayerReadout {
@@ -385,6 +399,38 @@ impl Model {
         let x = Tensor::from_slice(x, (1, x.len()), self.runtime.device().tensor_device())?;
         Ok(x.matmul(w)?.flatten_all()?.to_vec1::<f32>()?)
     }
+    /// `rows` is row-major `[count, cols]`. One row stays on `gemv`.
+    fn project_matrix(&self, w: &Tensor, rows: &[f32], cols: usize) -> Result<Vec<f32>> {
+        if cols == 0 || !rows.len().is_multiple_of(cols) {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        let count = rows.len() / cols;
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        if count == 1 {
+            return self.gemv(w, rows);
+        }
+        let dims = w.dims();
+        if dims.len() != 2 || dims[0] != cols {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        let out = dims[1];
+        let x = Tensor::from_slice(rows, (count, cols), self.runtime.device().tensor_device())?;
+        let y = x.matmul(w)?.flatten_all()?.to_vec1::<f32>()?;
+        if y.len() != count * out {
+            return Err(Error::Request("projection width mismatch".into()));
+        }
+        Ok(y)
+    }
+    /// One GEMM per projection for a long prompt. A 768-wide product is faster
+    /// from 16 tokens, but a 59-token prompt moved a confidence head by more
+    /// than 0.01, so prompts below 128 tokens stay on the token loop. Narrow
+    /// graphs always stay there, and each of those tokens remains a
+    /// cancellation point.
+    fn batched_prefill(&self, tokens: usize) -> bool {
+        tokens >= 128 && self.geometry.width >= 64
+    }
     /// `w` is archive layout `[out, in]`, usually a narrow output-row slice.
     fn linear_tensor(&self, w: &Tensor, x: &[f32]) -> Result<Vec<f32>> {
         self.gemv(&w.t()?, x)
@@ -431,9 +477,7 @@ impl Model {
         let _permit = self.runtime.begin(cancel)?;
         self.check_request(tokens, 0, false, 0)?;
         let mut state = self.capturing_state();
-        for &token in tokens {
-            self.step(token, &mut state, cancel, StepLogits::Omit)?;
-        }
+        self.prefill(tokens, &mut state, cancel, false)?;
         check_cancel(cancel)?;
         let width = self.geometry.width;
         if state.layer_means.len() != self.geometry.layers
@@ -568,16 +612,7 @@ impl Model {
         let _permit = self.runtime.begin(cancel)?;
         self.check_request(tokens, 0, false, 0)?;
         let mut state = self.state(false);
-        let mut logits = Vec::new();
-        let last = tokens.len().saturating_sub(1);
-        for (index, &token) in tokens.iter().enumerate() {
-            let mode = if index == last {
-                StepLogits::Return
-            } else {
-                StepLogits::Omit
-            };
-            logits = self.step(token, &mut state, cancel, mode)?;
-        }
+        let logits = self.prefill(tokens, &mut state, cancel, true)?;
         check_cancel(cancel)?;
         Ok(logits)
     }
@@ -617,16 +652,7 @@ impl Model {
         let collect_cells = self.heads.iter().any(|(code, _)| *code == 2);
         self.check_request(&input, max_tokens, collect_cells, reserved_bytes)?;
         let mut state = self.state(collect_cells);
-        let mut logits = Vec::new();
-        let last = input.len().saturating_sub(1);
-        for (index, &token) in input.iter().enumerate() {
-            let mode = if index == last {
-                StepLogits::Return
-            } else {
-                StepLogits::Omit
-            };
-            logits = self.step(token, &mut state, cancel, mode)?;
-        }
+        let mut logits = self.prefill(&input, &mut state, cancel, true)?;
         let mut output = Vec::new();
         let mut sum = 0.0;
         let mut finished = false;
@@ -732,9 +758,7 @@ impl Model {
         );
         self.check_request(&ids, 0, true, 0)?;
         let mut state = self.state(true);
-        for id in ids {
-            self.step(id, &mut state, cancel, StepLogits::Omit)?;
-        }
+        self.prefill(&ids, &mut state, cancel, false)?;
         let &(code, b) = self
             .heads
             .iter()
@@ -856,7 +880,12 @@ impl Model {
         Ok(out)
     }
 
-    fn engram(&self, site: usize, state: &mut State) -> Result<(Vec<f32>, Vec<f32>)> {
+    fn engram_embedding(&self, site: usize, tokens: &[u32], pos: usize) -> Result<Vec<f32>> {
+        if pos >= tokens.len() {
+            return Err(Error::Request(
+                "engram position is outside the token state".into(),
+            ));
+        }
         let g = &self.geometry;
         let heads = g.engram_tables / g.engram_orders.len();
         let stride = if g.engram_seed_heads == 0 {
@@ -868,13 +897,14 @@ impl Model {
         let base = self.engrams + 4 * site;
         for (oi, &order) in g.engram_orders.iter().enumerate() {
             for head in 0..heads {
-                if state.tokens.len() < order {
+                if pos + 1 < order {
                     e.extend(vec![0.0; g.engram_dim]);
                     continue;
                 }
                 let mut acc = 0x9e3779b9u32.wrapping_mul((oi * stride + head + 1) as u32);
                 for j in 0..order {
-                    acc = (acc ^ state.tokens[state.tokens.len() - 1 - j]).wrapping_mul(0x01000193);
+                    let id = tokens[pos - j];
+                    acc = (acc ^ id).wrapping_mul(0x01000193);
                 }
                 acc ^= acc >> 15;
                 e.extend(self.row(
@@ -884,8 +914,18 @@ impl Model {
             }
         }
         quant(&mut e);
-        let k = self.linear(base + 1, &e)?;
-        let v = self.linear(base + 2, &e)?;
+        Ok(e)
+    }
+
+    fn push_engram(
+        &self,
+        site: usize,
+        state: &mut State,
+        k: Vec<f32>,
+        v: Vec<f32>,
+    ) -> Result<(Vec<f32>, Vec<f32>)> {
+        let g = &self.geometry;
+        let base = self.engrams + 4 * site;
         push_recent(
             &mut state.engram_values[site],
             v,
@@ -902,6 +942,14 @@ impl Model {
         ))
     }
 
+    fn engram(&self, site: usize, state: &mut State, pos: usize) -> Result<(Vec<f32>, Vec<f32>)> {
+        let e = self.engram_embedding(site, &state.tokens, pos)?;
+        let base = self.engrams + 4 * site;
+        let k = self.linear(base + 1, &e)?;
+        let v = self.linear(base + 2, &e)?;
+        self.push_engram(site, state, k, v)
+    }
+
     fn attention(
         &self,
         x: &[f32],
@@ -914,10 +962,38 @@ impl Model {
         let o = b + if g.conv_taps > 0 { 3 } else { 0 };
         let mut x = x.to_vec();
         quant(&mut x);
+        let q = self.linear(b + 1, &x)?;
+        let k = self.linear(b + 2, &x)?;
+        let v = self.linear(b + 3, &x)?;
+        let gates = self.linear(o + 6, &x)?;
+        let mixed = self.mix_attention(
+            layer,
+            pos,
+            state,
+            &ProjectedAttention {
+                q: &q,
+                k: &k,
+                v: &v,
+                gates: &gates,
+            },
+        )?;
+        self.linear(o + 7, &mixed)
+    }
+
+    fn mix_attention(
+        &self,
+        layer: usize,
+        pos: usize,
+        state: &mut LayerState,
+        projected: &ProjectedAttention<'_>,
+    ) -> Result<Vec<f32>> {
+        let g = &self.geometry;
+        let b = self.base(layer);
+        let o = b + if g.conv_taps > 0 { 3 } else { 0 };
         let history = g.conv_taps.max(1);
-        push_recent(&mut state.q, self.linear(b + 1, &x)?, history);
-        push_recent(&mut state.k, self.linear(b + 2, &x)?, history);
-        push_recent(&mut state.v, self.linear(b + 3, &x)?, history);
+        push_recent(&mut state.q, projected.q.to_vec(), history);
+        push_recent(&mut state.k, projected.k.to_vec(), history);
+        push_recent(&mut state.v, projected.v.to_vec(), history);
         let (q, k, v) = if g.conv_taps > 0 {
             (
                 self.tapped(&state.q, b + 4, g.conv_taps, 1)?,
@@ -981,12 +1057,11 @@ impl Model {
                 axpy(&mut out[dst..dst + width], p, values);
             }
         }
-        let gates = self.linear(o + 6, &x)?;
-        for (v, g) in out.iter_mut().zip(gates) {
-            *v *= sigmoid(g);
+        for (value, gate) in out.iter_mut().zip(projected.gates) {
+            *value *= sigmoid(*gate);
         }
         quant(&mut out);
-        self.linear(o + 7, &out)
+        Ok(out)
     }
 
     fn kron(&self, x: &[f32], a: usize, b: usize) -> Result<Vec<f32>> {
@@ -1029,6 +1104,267 @@ impl Model {
             .collect();
         let z = self.kron(&z, o + 20, o + 21)?;
         Ok(z.iter().zip(d4).take(x.len()).map(|(v, d)| v * d).collect())
+    }
+
+    fn prepare_carry(
+        &self,
+        stream: &[f32],
+        layer: usize,
+        ap: &[f32],
+        ao: &[f32],
+        ar: &[f32],
+    ) -> Result<TokenCarry> {
+        let d = self.geometry.width;
+        let n = self.geometry.lanes;
+        let mut nx = rms(stream);
+        quant(&mut nx);
+        let mut pre =
+            self.linear_tensor(&self.weights[self.mhc + 6].narrow(0, layer * n, n)?, &nx)?;
+        let mut post =
+            self.linear_tensor(&self.weights[self.mhc + 7].narrow(0, layer * n, n)?, &nx)?;
+        let mut res = self.linear_tensor(
+            &self.weights[self.mhc + 8].narrow(0, layer * n * n, n * n)?,
+            &nx,
+        )?;
+        let bp = self.row(self.mhc + 3, layer)?;
+        let bo = self.row(self.mhc + 4, layer)?;
+        let br = self.row(self.mhc + 5, layer)?;
+        for i in 0..n {
+            let lane = if i == layer % n { 1.0 } else { 0.0 };
+            pre[i] = sigmoid(ap[layer] * pre[i] + bp[i] + 8.0 * lane - 4.0);
+            post[i] = 2.0 * sigmoid(ao[layer] * post[i] + bo[i] - 4.0 * (1.0 - lane));
+        }
+        for i in 0..n * n {
+            res[i] = ar[layer] * res[i] + br[i];
+        }
+        sinkhorn(&mut res, n);
+        let mut u = vec![0.0; d];
+        for lane in 0..n {
+            for i in 0..d {
+                u[i] += pre[lane] * stream[lane * d + i];
+            }
+        }
+        Ok(TokenCarry {
+            x: u.clone(),
+            u,
+            post,
+            res,
+        })
+    }
+
+    /// Walk `tokens` from the current state. Long prompts project each layer
+    /// as one matrix. The last distribution is the only one returned.
+    fn prefill(
+        &self,
+        tokens: &[u32],
+        state: &mut State,
+        cancel: &CancellationToken,
+        return_last: bool,
+    ) -> Result<Vec<f32>> {
+        if !self.batched_prefill(tokens.len()) {
+            let mut logits = Vec::new();
+            let last = tokens.len().saturating_sub(1);
+            for (index, &token) in tokens.iter().enumerate() {
+                let mode = if return_last && index == last {
+                    StepLogits::Return
+                } else {
+                    StepLogits::Omit
+                };
+                logits = self.step(token, state, cancel, mode)?;
+            }
+            return Ok(logits);
+        }
+        check_cancel(cancel)?;
+        let g = &self.geometry;
+        let d = g.width;
+        let n = g.lanes;
+        let count = tokens.len();
+        let base = state.tokens.len();
+        if state.capture_layers {
+            state.layer_means.clear();
+        }
+        let scale = (d as f32).sqrt();
+        let mut streams = Vec::with_capacity(count);
+        let mut token_cells = Vec::new();
+        for &token in tokens {
+            check_cancel(cancel)?;
+            let embedding: Vec<f32> = self
+                .row(0, token as usize)?
+                .iter()
+                .map(|value| value * scale)
+                .collect();
+            streams.push(embedding.repeat(n));
+            if state.collect_cells {
+                token_cells.push(embedding);
+            }
+            state.tokens.push(token);
+        }
+        let ap = self.flat(self.mhc)?;
+        let ao = self.flat(self.mhc + 1)?;
+        let ar = self.flat(self.mhc + 2)?;
+        let nq = g.heads * g.qk_dim;
+        let nk = g.kv_heads * g.qk_dim;
+        let nv = g.kv_heads * g.v_dim;
+        let ng = g.heads * g.v_dim;
+        for layer in 0..g.layers {
+            check_cancel(cancel)?;
+            let mut carries = Vec::with_capacity(count);
+            for stream in &streams {
+                carries.push(self.prepare_carry(stream, layer, &ap, &ao, &ar)?);
+            }
+            if let Some(site) = g.engram_sites.iter().position(|&value| value == layer) {
+                let mut packed_e = Vec::new();
+                for t in 0..count {
+                    check_cancel(cancel)?;
+                    packed_e.extend(self.engram_embedding(site, &state.tokens, base + t)?);
+                }
+                let e_len = packed_e.len() / count;
+                let weight = self.engrams + 4 * site;
+                let keys = self.project_matrix(&self.weights[weight + 1], &packed_e, e_len)?;
+                let values = self.project_matrix(&self.weights[weight + 2], &packed_e, e_len)?;
+                if !keys.len().is_multiple_of(count) || !values.len().is_multiple_of(count) {
+                    return Err(Error::Request("projection width mismatch".into()));
+                }
+                let k_width = keys.len() / count;
+                let v_width = values.len() / count;
+                if k_width != d || v_width != d {
+                    return Err(Error::Request("projection width mismatch".into()));
+                }
+                for (t, carry) in carries.iter_mut().enumerate() {
+                    let key = row_at(&keys, t, k_width)?.to_vec();
+                    let value = row_at(&values, t, v_width)?.to_vec();
+                    let (key, value) = self.push_engram(site, state, key, value)?;
+                    let mix = sigmoid(dot(&rms(&carry.x), &rms(&key)) / scale);
+                    for (slot, term) in carry.x.iter_mut().zip(&value) {
+                        *slot += mix * term;
+                    }
+                }
+            }
+            let b = self.base(layer);
+            let o = b + if g.conv_taps > 0 { 3 } else { 0 };
+            let norm_w = self.flat(b)?;
+            let mut packed_x = Vec::with_capacity(count * d);
+            for carry in &carries {
+                let mut input = norm(&carry.x, &norm_w);
+                quant(&mut input);
+                packed_x.extend(input);
+            }
+            let q = self.project_matrix(&self.weights[b + 1], &packed_x, d)?;
+            let k = self.project_matrix(&self.weights[b + 2], &packed_x, d)?;
+            let v = self.project_matrix(&self.weights[b + 3], &packed_x, d)?;
+            let gates = self.project_matrix(&self.weights[o + 6], &packed_x, d)?;
+            if q.len() != count * nq
+                || k.len() != count * nk
+                || v.len() != count * nv
+                || gates.len() != count * ng
+            {
+                return Err(Error::Request("projection width mismatch".into()));
+            }
+            let mut packed_mix = Vec::with_capacity(count * ng);
+            for t in 0..count {
+                check_cancel(cancel)?;
+                let mixed = self.mix_attention(
+                    layer,
+                    base + t,
+                    &mut state.layers[layer],
+                    &ProjectedAttention {
+                        q: row_at(&q, t, nq)?,
+                        k: row_at(&k, t, nk)?,
+                        v: row_at(&v, t, nv)?,
+                        gates: row_at(&gates, t, ng)?,
+                    },
+                )?;
+                if mixed.len() != ng {
+                    return Err(Error::Request("projection width mismatch".into()));
+                }
+                packed_mix.extend(mixed);
+            }
+            let projected = self.project_matrix(&self.weights[o + 7], &packed_mix, ng)?;
+            if projected.len() != count * d {
+                return Err(Error::Request("projection width mismatch".into()));
+            }
+            let att_norm = self.flat(o + 8)?;
+            let att_gate = self.flat(o + 9)?;
+            let gate = sigmoid(
+                *att_gate
+                    .first()
+                    .ok_or_else(|| Error::Request("missing attention gate".into()))?,
+            );
+            let mlp_norm = self.flat(o + 10)?;
+            for t in 0..count {
+                check_cancel(cancel)?;
+                let mut att = norm(row_at(&projected, t, d)?, &att_norm);
+                for (slot, value) in carries[t].x.iter_mut().zip(&att) {
+                    *slot += gate * value;
+                }
+                att = norm(&carries[t].x, &mlp_norm);
+                let mlp = self.mlp(&att, o)?;
+                let mut next = vec![0.0; n * d];
+                for lane in 0..n {
+                    for i in 0..d {
+                        next[lane * d + i] =
+                            carries[t].post[lane] * (carries[t].x[i] + mlp[i] - carries[t].u[i]);
+                        for j in 0..n {
+                            next[lane * d + i] +=
+                                carries[t].res[lane * n + j] * streams[t][j * d + i];
+                        }
+                    }
+                }
+                streams[t] = next;
+                if state.collect_cells || (state.capture_layers && t + 1 == count) {
+                    let mut mean = vec![0.0; d];
+                    for i in 0..d {
+                        mean[i] =
+                            (0..n).map(|lane| streams[t][lane * d + i]).sum::<f32>() / n as f32;
+                    }
+                    if state.capture_layers && t + 1 == count {
+                        state.layer_means.push(mean.clone());
+                    }
+                    if state.collect_cells {
+                        token_cells[t].extend(mean);
+                    }
+                }
+            }
+        }
+        if state.collect_cells {
+            state.cells.extend(token_cells);
+        }
+        let final_norm = self.flat(self.final_norm)?;
+        let mut last_hidden = Vec::new();
+        for (t, stream) in streams.iter().enumerate() {
+            check_cancel(cancel)?;
+            let mut hidden = vec![0.0; d];
+            for lane in 0..n {
+                for i in 0..d {
+                    hidden[i] += stream[lane * d + i] / n as f32;
+                }
+            }
+            let mut hidden = norm(&hidden, &final_norm);
+            quant(&mut hidden);
+            if hidden.iter().any(|value| !value.is_finite()) {
+                return Err(Error::Request("non-finite model output".into()));
+            }
+            if state.capture_layers && t + 1 == count {
+                state.quantized_hidden.clone_from(&hidden);
+            }
+            if t + 1 == count {
+                last_hidden = hidden;
+            }
+        }
+        if !return_last {
+            return Ok(Vec::new());
+        }
+        let logits = if g.out_vocab == g.vocab {
+            self.gemv(&self.weights[0], &last_hidden)?
+        } else {
+            let head = self.weights[0].narrow(1, 0, g.out_vocab)?.contiguous()?;
+            self.gemv(&head, &last_hidden)?
+        };
+        if logits.iter().any(|value| !value.is_finite()) {
+            return Err(Error::Request("non-finite model output".into()));
+        }
+        check_cancel(cancel)?;
+        Ok(logits)
     }
 
     fn step(
@@ -1093,7 +1429,7 @@ impl Model {
             }
             let mut x = u.clone();
             if let Some(site) = g.engram_sites.iter().position(|&v| v == layer) {
-                let (k, v) = self.engram(site, state)?;
+                let (k, v) = self.engram(site, state, pos)?;
                 let a = sigmoid(dot(&rms(&x), &rms(&k)) / (d as f32).sqrt());
                 for i in 0..d {
                     x[i] += a * v[i];
@@ -1245,6 +1581,18 @@ fn orient_tensor(tensor: &Tensor) -> Result<Tensor> {
         &[dims[1], dims[0]],
         tensor.device(),
     )?)
+}
+
+fn row_at(values: &[f32], index: usize, width: usize) -> Result<&[f32]> {
+    let start = index
+        .checked_mul(width)
+        .ok_or_else(|| Error::Request("projection width mismatch".into()))?;
+    let end = start
+        .checked_add(width)
+        .ok_or_else(|| Error::Request("projection width mismatch".into()))?;
+    values
+        .get(start..end)
+        .ok_or_else(|| Error::Request("projection width mismatch".into()))
 }
 
 fn push_recent(history: &mut VecDeque<Vec<f32>>, value: Vec<f32>, capacity: usize) {
