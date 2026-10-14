@@ -253,6 +253,13 @@ directory gains a file. A directory path and a truncated file are rejected.
 The campaign remains 14 passed and 3 failed. A Needle replacement is not
 certified.
 
+The [canonical receipt](docs/evidence/akis/20261014-canonical-receipt/OUTCOME.md)
+checks each passing completion against a second tokenize of the same chat
+prompt. The input digest covers BOS plus those ids. The output digest covers
+the returned token ids. One changed token does not match. The kitchen head
+score remains 0.8660065. The campaign remains 14 passed and 3 failed. A Needle
+replacement is not certified.
+
 Independent numerical checks use the pinned upstream `architecture.py`,
 `export.py`, `quantize.py` with JAX/Flax/NumPy in a separate development environment:
 

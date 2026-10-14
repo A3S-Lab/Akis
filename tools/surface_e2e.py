@@ -9,7 +9,7 @@ import pathlib
 import subprocess
 import sys
 
-from live_e2e import MODEL_SHA, TOOL
+from live_e2e import MODEL_SHA, TOOL, model_prompt, token_record
 
 
 def digest(path):
@@ -101,7 +101,7 @@ def main():
     assert again["function_calls"] == calls
     assert again["generation"]["token_ids"] == complete["generation"]["token_ids"]
     assert again["generation"]["head_score"] == complete["generation"]["head_score"]
-    assert receipt_digests(complete) == receipt_digests(again)
+    assert receipt_digests(binary, model, complete) == receipt_digests(binary, model, again)
     print(json.dumps({
         "status": "passed",
         "commands": ["inspect", "tokenize", "logits", "layers", "embed", "generate", "complete"],
@@ -111,14 +111,28 @@ def main():
     return 0
 
 
-def receipt_digests(body):
+def receipt_digests(binary, model, body):
     receipt = body["generation"]["receipt"]
     assert receipt["schema"] == "a3s.power.embedded-execution-receipt.v1"
     assert receipt["runtime"]["device"] == "cpu"
     assert receipt["model"]["weightsSha256"] == MODEL_SHA
-    pair = (receipt["input"]["sha256"], receipt["output"]["sha256"])
-    assert all(isinstance(item, str) and len(item) == 64 for item in pair)
-    return pair
+    tokenized = run(binary, model, "tokenize", model_prompt("turn on the kitchen lights", [TOOL]))
+    bound = token_record([2, *tokenized["ids"]])
+    assert (
+        receipt["input"]["sha256"],
+        receipt["input"]["byteLength"],
+        receipt["input"]["itemCount"],
+    ) == bound
+    output = token_record(body["generation"]["token_ids"])
+    assert (
+        receipt["output"]["sha256"],
+        receipt["output"]["byteLength"],
+        receipt["output"]["itemCount"],
+    ) == output
+    changed = [2, *tokenized["ids"]]
+    changed[-1] ^= 1
+    assert token_record(changed)[0] != bound[0]
+    return bound[0], output[0]
 
 
 if __name__ == "__main__":

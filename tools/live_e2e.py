@@ -21,6 +21,38 @@ def digest(path):
     return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 
 
+def sort_json(value):
+    """serde_json object keys are stored in byte order. Arrays keep their order."""
+    if isinstance(value, dict):
+        return {key: sort_json(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [sort_json(item) for item in value]
+    return value
+
+
+def model_prompt(user, tools):
+    rendered = []
+    for tool in tools:
+        rendered.append({
+            "name": tool["name"],
+            "description": tool["description"],
+            "parameters": sort_json(tool["parameters"]),
+        })
+    tools_json = json.dumps(rendered, ensure_ascii=False, separators=(",", ":"))
+    return (
+        "<|im_start|>user\n<tools>"
+        + tools_json
+        + "</tools>\n"
+        + user
+        + "<|im_end|>\n<|im_start|>assistant\n"
+    )
+
+
+def token_record(ids):
+    raw = b"".join(struct.pack("<I", i) for i in ids)
+    return hashlib.sha256(b"a3s-power-token-ids-v1\0" + raw).hexdigest(), len(raw), len(ids)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", type=pathlib.Path)
@@ -88,13 +120,29 @@ def main():
             assert gen["finished"] and 0 < len(gen["token_ids"]) <= 128
             assert 0 <= gen["head_score"] <= 1 and 0 <= gen["mean_token_probability"] <= 1
             receipt = gen["receipt"]
+            assert receipt["schema"] == "a3s.power.embedded-execution-receipt.v1"
             assert receipt["runtime"]["device"] == "cpu"
             assert receipt["runtime"]["name"] == "a3s-power-native"
             assert receipt["model"]["weightsSha256"] == MODEL_SHA
-            raw = b"".join(struct.pack("<I", i) for i in gen["token_ids"])
-            assert receipt["output"]["sha256"] == hashlib.sha256(b"a3s-power-token-ids-v1\0" + raw).hexdigest(), "output receipt digest"
-            assert receipt["output"]["itemCount"] == len(gen["token_ids"])
-            assert receipt["output"]["byteLength"] == len(raw)
+            tokenized = command("tokenize", model_prompt(fixture["input"], [TOOL]))
+            bound = token_record([2, *tokenized["ids"]])
+            assert (
+                receipt["input"]["sha256"],
+                receipt["input"]["byteLength"],
+                receipt["input"]["itemCount"],
+            ) == bound, "input receipt digest"
+            changed = [2, *tokenized["ids"]]
+            changed[-1] ^= 1
+            assert token_record(changed)[0] != bound[0]
+            output = token_record(gen["token_ids"])
+            assert (
+                receipt["output"]["sha256"],
+                receipt["output"]["byteLength"],
+                receipt["output"]["itemCount"],
+            ) == output, "output receipt digest"
+            changed_output = list(gen["token_ids"])
+            changed_output[-1] ^= 1
+            assert token_record(changed_output)[0] != output[0]
             return {"calls": calls, "tokens": len(gen["token_ids"]), "head_score": gen["head_score"],
                     "receipt": receipt}
         case(fixture["id"], completion)
